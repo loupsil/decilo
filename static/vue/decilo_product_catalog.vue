@@ -78,7 +78,7 @@
       </button>
     </div>
 
-    <!-- Checkout Modal -->
+    <!-- Checkout Fullscreen -->
     <DeciloCheckout
       v-if="selectedProduct"
       :selectedProduct="selectedProduct"

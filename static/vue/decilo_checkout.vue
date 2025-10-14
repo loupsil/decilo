@@ -1,8 +1,12 @@
 <template>
-  <!-- Product Details Modal -->
-  <div v-if="selectedProduct" class="modal-overlay" @click="closeModal">
-    <div class="modal-content" @click.stop>
-      <button class="close-btn" @click="closeModal">&times;</button>
+  <!-- Product Details Fullscreen -->
+  <div v-if="selectedProduct" class="fullscreen-checkout">
+    <button class="back-btn-header" @click="closeModal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+      Back to Products
+    </button>
       <!-- Progress Bar: fixed at top of modal -->
       <div class="order-progress">
         <div class="progress-step" :class="{ active: orderStep >= 0, completed: orderStep > 0 }">
@@ -135,98 +139,101 @@
               <div class="form-group">
                 <label for="patientSelect">Select Existing Patient</label>
 
-                <!-- Patient Search Bar -->
-                <div class="patient-search-container">
-                  <input
-                    v-model="patientSearchQuery"
-                    type="text"
-                    placeholder="Search patients by name, first name, last name, or email..."
-                    class="patient-search-input"
-                    @input="filterPatients"
-                  >
-                  <svg class="patient-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.35-4.35"></path>
-                  </svg>
-                </div>
-
-                <!-- Custom Dropdown -->
-                <div class="custom-dropdown" :class="{ 'is-open': isDropdownOpen }">
-                  <div class="dropdown-trigger" @click="toggleDropdown" :class="{ 'has-selection': selectedPatient }">
-                    <div class="dropdown-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="12" cy="7" r="4"></circle>
-                      </svg>
-                    </div>
-                    <div class="dropdown-text">
-                      <span v-if="selectedPatient">{{ selectedPatient.name }}</span>
-                      <span v-else class="placeholder">Choose existing patient</span>
-                    </div>
-                    <div class="dropdown-arrow" :class="{ 'rotated': isDropdownOpen }">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6,9 12,15 18,9"></polyline>
-                      </svg>
-                    </div>
-                    <div v-if="selectedPatient" class="dropdown-clear-btn" @click.stop="clearPatientSelection">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                      </svg>
-                    </div>
-                  </div>
-
-                  <!-- Dropdown Options Panel -->
-                  <div v-if="isDropdownOpen" class="dropdown-options" v-click-outside="closeDropdown">
-                    <!-- Loading State -->
-                    <div v-if="isLoadingPatients" class="dropdown-loading">
-                      <div class="loading-spinner-small"></div>
-                      <span>Loading patients...</span>
-                    </div>
-
-                    <!-- Options List -->
-                    <div v-else-if="filterPatients().length > 0" class="dropdown-options-list">
-                      <div
-                        v-for="patient in filterPatients()"
-                        :key="patient.id"
-                        class="dropdown-option"
-                        :class="{ 'is-selected': selectedPatient && selectedPatient.id === patient.id }"
-                        @click="selectPatient(patient)"
-                      >
-                        <div class="option-icon">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
-                          </svg>
-                        </div>
-                        <div class="option-content">
-                          <div class="option-name">{{ patient.name }}</div>
-                          <div class="option-details">
-                            <span v-if="patient.email">{{ patient.email }}</span>
-                            <span v-if="patient.phone">{{ patient.phone }}</span>
-                          </div>
-                        </div>
-                        <div v-if="selectedPatient && selectedPatient.id === patient.id" class="option-check">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="20,6 9,17 4,12"></polyline>
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Empty State -->
-                    <div v-else class="dropdown-empty">
-                      <div class="empty-icon">
+                <!-- Patient Selection Container -->
+                <div class="patient-selection-container">
+                  <!-- Custom Dropdown -->
+                  <div class="custom-dropdown" :class="{ 'is-open': isDropdownOpen }">
+                    <div class="dropdown-trigger" @click="toggleDropdown" :class="{ 'has-selection': selectedPatient }">
+                      <div class="dropdown-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                           <circle cx="12" cy="7" r="4"></circle>
                         </svg>
                       </div>
-                      <div class="empty-content">
-                        <p>No patients found</p>
-                        <small>Create a new patient below or start typing to add one manually</small>
+                      <div class="dropdown-text">
+                        <span v-if="selectedPatient">{{ selectedPatient.name }}</span>
+                        <span v-else class="placeholder">Choose existing patient</span>
+                      </div>
+                      <div class="dropdown-arrow" :class="{ 'rotated': isDropdownOpen }">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="6,9 12,15 18,9"></polyline>
+                        </svg>
+                      </div>
+                      <div v-if="selectedPatient" class="dropdown-clear-btn" @click.stop="clearPatientSelection">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
                       </div>
                     </div>
+
+                    <!-- Dropdown Options Panel -->
+                    <div v-if="isDropdownOpen" class="dropdown-options" v-click-outside="closeDropdown">
+                      <!-- Loading State -->
+                      <div v-if="isLoadingPatients" class="dropdown-loading">
+                        <div class="loading-spinner-small"></div>
+                        <span>Loading patients...</span>
+                      </div>
+
+                      <!-- Options List -->
+                      <div v-else-if="filterPatients().length > 0" class="dropdown-options-list">
+                        <div
+                          v-for="patient in filterPatients()"
+                          :key="patient.id"
+                          class="dropdown-option"
+                          :class="{ 'is-selected': selectedPatient && selectedPatient.id === patient.id }"
+                          @click="selectPatient(patient)"
+                        >
+                          <div class="option-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                          </div>
+                          <div class="option-content">
+                            <div class="option-name">{{ patient.name }}</div>
+                            <div class="option-details">
+                              <span v-if="patient.email">{{ patient.email }}</span>
+                              <span v-if="patient.phone">{{ patient.phone }}</span>
+                            </div>
+                          </div>
+                          <div v-if="selectedPatient && selectedPatient.id === patient.id" class="option-check">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <polyline points="20,6 9,17 4,12"></polyline>
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Empty State -->
+                      <div v-else class="dropdown-empty">
+                        <div class="empty-icon">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                          </svg>
+                        </div>
+                        <div class="empty-content">
+                          <p>No patients found</p>
+                          <small>Create a new patient below or start typing to add one manually</small>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Patient Search Bar -->
+                  <div class="patient-search-container">
+                    <input
+                      v-model="patientSearchQuery"
+                      type="text"
+                      placeholder="Search patients..."
+                      class="patient-search-input"
+                      @input="filterPatients"
+                    >
+                    <svg class="patient-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <path d="m21 21-4.35-4.35"></path>
+                    </svg>
                   </div>
                 </div>
               </div>
@@ -356,7 +363,7 @@
           <!-- empty div for grid management-->
         </div>
         <!-- Navigation Buttons -->
-        <div class="modal-order-button-container">
+        <div class="checkout-button-container">
           <button
             v-if="orderStep >= 0 && orderStep < 4"
             class="back-btn"
@@ -381,7 +388,6 @@
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <script>
@@ -770,65 +776,58 @@ export default {
 </script>
 
 <style scoped>
-/* Modal styles */
-.modal-overlay {
+/* Fullscreen styles */
+.fullscreen-checkout {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  backdrop-filter: blur(8px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  background: var(--secondary-color);
   z-index: 1000;
+  overflow-y: auto;
   padding: 20px;
 }
 
-.modal-content {
-  background: var(--secondary-color);
-  border: 1px solid #334155;
-  border-radius: 16px;
-  width: 100%;
-  max-width: 90%;
-  max-height: 95vh;
-  position: relative;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-}
-
-.close-btn {
+.back-btn-header {
   position: absolute;
   top: 20px;
-  right: 20px;
-  background: rgba(30, 41, 59, 0.8);
+  left: 20px;
+  background: var(--secondary-color);
   border: 1px solid #475569;
   border-radius: 10px;
   color: #ffffff;
-  font-size: 18px;
-  width: 36px;
-  height: 36px;
+  font-size: 14px;
+  padding: 12px 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(8px);
   z-index: 10;
 }
 
-.close-btn:hover {
+.back-btn-header:hover {
   background: rgba(239, 68, 68, 0.8);
   border-color: #ef4444;
-  transform: scale(1.1);
+  transform: translateY(-2px);
+}
+
+.back-btn-header svg {
+  width: 16px;
+  height: 16px;
 }
 
 .modal-product-details {
+  overflow: hidden;
+  max-height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 30%) minmax(0, 1fr);
   gap: 32px;
   min-height: calc(100vh - 200px);
   padding: 32px;
-  padding-top: 112px;
+  padding-top: 120px;
   box-sizing: border-box;
 }
 
@@ -878,7 +877,7 @@ export default {
   align-items: center;
   justify-content: space-between;
   margin: 0;
-  padding: 20px 20px;
+  padding: 20px 250px;
   padding-right: 100px;
   background: var(--secondary-color);
   border-bottom: 1px solid #334155;
@@ -1023,10 +1022,18 @@ export default {
   font-weight: 400;
 }
 
+/* Patient Selection Container */
+.patient-selection-container {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
 /* Custom Dropdown Styles */
 .custom-dropdown {
   position: relative;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .dropdown-trigger {
@@ -1116,7 +1123,7 @@ export default {
 }
 
 .dropdown-options {
-  width: 80%;
+  width: 100%;
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
@@ -1441,7 +1448,7 @@ export default {
   box-shadow: none;
 }
 
-.modal-order-button-container {
+.checkout-button-container {
   position: sticky;
   bottom: 0;
   left: 32px;
@@ -1451,6 +1458,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   z-index: 3;
+  padding: 0 20px;
 }
 
 .order-btn.large {
@@ -1637,6 +1645,7 @@ export default {
   }
 
   .modal-product-details {
+    max-height: 100%;
     gap: 24px;
     padding: 24px;
     padding-top: 75px;
@@ -1644,38 +1653,32 @@ export default {
 }
 
 @media (max-width: 768px) {
-  .modal-overlay {
+  .fullscreen-checkout {
     padding: 12px;
   }
 
-  .modal-content {
-    max-width: 95%;
-    border-radius: 14px;
-    overflow-y: auto;
-    overflow-x: hidden;
+  .back-btn-header {
+    top: 15px;
+    left: 15px;
   }
 
-  .close-btn {
-    top: 15px;
-    right: 15px;
+  .patient-selection-container {
+    flex-direction: column;
+    gap: 12px;
   }
 
   .modal-product-details {
+    max-height: 100%;
     grid-template-columns: 1fr;
     gap: 18px;
     min-height: calc(100vh - 180px);
     padding: 18px;
-    padding-top: 98px;
+    padding-top: 80px;
     box-sizing: border-box;
   }
 
   .order-progress {
-    padding: 16px 12px;
-    padding-right: 80px;
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: center;
-    min-height: 60px;
+    display: none;
   }
 
   .progress-step {
@@ -1712,7 +1715,7 @@ export default {
     overflow-y: auto;
   }
 
-  .modal-order-button-container {
+  .checkout-button-container {
     position: sticky;
     bottom: 0;
     left: 18px;
@@ -1790,31 +1793,19 @@ export default {
 }
 
 @media (max-width: 480px) {
-  .modal-overlay {
+  .fullscreen-checkout {
     padding: 8px;
   }
 
-  .modal-content {
-    max-width: 98%;
-    max-height: 95%;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
   .modal-product-details {
+    max-height: 100%;
     padding: 14px;
     padding-top: 75px;
     min-height: calc(100vh - 140px);
     box-sizing: border-box;
   }
 
-  .order-progress {
-    padding: 10px 6px;
-    padding-right: 60px;
-    gap: 3px;
-    min-height: 50px;
-    padding-right : 60px;
-  }
+
 
   .progress-step {
     font-size: 8px;
@@ -1840,7 +1831,7 @@ export default {
     padding: 12px;
   }
 
-  .modal-order-button-container {
+  .checkout-button-container {
     position: sticky;
     bottom: 0;
     left: 14px;
@@ -2029,29 +2020,35 @@ export default {
 }
 
 /* Patient Search Styles */
-.patient-search-container {
-  position: relative;
-  margin-bottom: 16px;
-}
+  .patient-search-container {
+    position: relative;
+    flex: 1;
+    min-width: unset;
+  }
 
 .patient-search-input {
   width: 100%;
   padding: 12px 40px 12px 16px;
-  border: 1px solid #e1e5e9;
-  border-radius: 8px;
+  border: 2px solid #334155;
+  border-radius: 12px;
   font-size: 14px;
-  background-color: #ffffff;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background-color: var(--secondary-color);
+  color: #ffffff;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .patient-search-input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow:
+    0 0 0 4px rgba(59, 130, 246, 0.15),
+    0 8px 32px rgba(59, 130, 246, 0.12);
+  transform: translateY(-2px);
 }
 
 .patient-search-input::placeholder {
-  color: #9ca3af;
+  color: #64748b;
+  font-weight: 400;
 }
 
 .patient-search-icon {
@@ -2061,7 +2058,7 @@ export default {
   transform: translateY(-50%);
   width: 20px;
   height: 20px;
-  color: #6b7280;
+  color: #64748b;
   pointer-events: none;
 }
 </style>
