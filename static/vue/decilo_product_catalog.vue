@@ -1035,7 +1035,7 @@ export default {
 
 .search-bar input:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--primary-color);
   box-shadow:
     0 0 0 4px rgba(59, 130, 246, 0.15),
     0 8px 32px rgba(59, 130, 246, 0.12);
@@ -1110,7 +1110,7 @@ export default {
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+  background: linear-gradient(90deg, var(--primary-color), #8b5cf6, #ec4899);
 }
 
 .product-card:hover {
@@ -1222,7 +1222,7 @@ export default {
   font-size: 14px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, var(--primary-color) 0%, #8b5cf6 100%);
   color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1256,7 +1256,7 @@ export default {
   font-weight: 600;
   min-width: 160px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, var(--primary-color) 0%, #8b5cf6 100%);
   color: #ffffff;
   border: none;
   box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
@@ -1472,8 +1472,8 @@ export default {
 }
 
 .progress-step.active .step-number {
-  border-color: #3b82f6;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border-color: var(--primary-color);
+  background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
   box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
   transform: scale(1.1);
 }
@@ -1496,7 +1496,7 @@ export default {
   left: 0;
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+  background: linear-gradient(90deg, var(--primary-color), #8b5cf6, #ec4899);
   transition: width 0.5s ease;
   border-radius: 2px;
 }
@@ -1555,7 +1555,7 @@ export default {
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--primary-color);
   box-shadow:
     0 0 0 4px rgba(59, 130, 246, 0.15),
     0 8px 32px rgba(59, 130, 246, 0.12);
@@ -1830,7 +1830,7 @@ export default {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+  background: linear-gradient(90deg, transparent, var(--primary-color), transparent);
 }
 
 .patient-or-divider span {
@@ -1838,7 +1838,7 @@ export default {
   padding: 0 24px;
   position: relative;
   z-index: 1;
-  border: 2px solid #3b82f6;
+  border: 2px solid var(--primary-color);
   border-radius: 8px;
 }
 
@@ -2246,9 +2246,9 @@ export default {
 }
 
 .page-number.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, var(--primary-color) 0%, #8b5cf6 100%);
   color: #ffffff;
-  border-color: #3b82f6;
+  border-color: var(--primary-color);
   box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
   transform: scale(1.1);
 }
@@ -2718,7 +2718,7 @@ export default {
 
 .patient-search-input:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 

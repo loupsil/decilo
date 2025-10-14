@@ -96,10 +96,6 @@
 
       <main class="dashboard-content">
         <div v-if="activeTab === 'orders'">
-          <div class="welcome-section">
-            <h1>Welcome, {{ customerInfo.name }}</h1>
-            <p class="subtitle">Follow your custom hearing tips orders</p>
-          </div>
           <decilo-orders :customer-info="customerInfo" @token-expired="handleTokenExpired" />
         </div>
         <decilo-product-catalog
@@ -469,19 +465,9 @@ export default {
 }
 
 .dashboard-content {
-  max-width: 1200px;
+  width: 90%;
   margin: 0 auto;
-  padding: 40px 20px;
-}
-
-.welcome-section {
-  margin-bottom: 40px;
-}
-
-.welcome-section h1 {
-  font-size: 32px;
-  margin: 0;
-  margin-bottom: 8px;
+  padding: 20px 20px;
 }
 
 .subtitle {

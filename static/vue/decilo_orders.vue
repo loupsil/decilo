@@ -1,135 +1,132 @@
 <template>
   <div class="orders-container">
     <div class="orders-header">
-      <div class="header-content">
-        <h2 class="orders-title">Your Orders</h2>
-      </div>
+      <h2 class="orders-title">Your Orders</h2>
     </div>
 
-    <div class="loading-overlay" v-if="isLoading">
-      <div class="loading-container">
+    <div v-if="isLoading" class="loading-state">
       <div class="loading-spinner"></div>
-        <p class="loading-text">Loading your orders...</p>
-      </div>
     </div>
 
     <div v-else>
-      <div class="orders-summary" v-if="filteredOrders.length">
-        <div class="summary-card">
-          <span class="summary-label">Total Orders</span>
-          <span class="summary-value">{{ filteredOrders.length }}</span>
+
+      <div class="search-and-filters-section">
+        <div class="search-section">
+          <div class="search-input-container">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input
+              type="text"
+              v-model="searchQuery"
+              placeholder="Search orders..."
+              @input="filterOrders"
+              class="search-input"
+            >
+          </div>
         </div>
-        <div class="summary-card clickable" :class="{ active: summaryFilter === 'ongoing' }" @click="setSummaryFilter('ongoing')">
-          <span class="summary-label">Ongoing</span>
-          <span class="summary-value">{{ filteredOrders.filter(o => o.manufacturing_state !== 'done').length }}</span>
-        </div>
-        <div class="summary-card clickable" :class="{ active: summaryFilter === 'completed' }" @click="setSummaryFilter('completed')">
-          <span class="summary-label">Completed</span>
-          <span class="summary-value">{{ filteredOrders.filter(o => o.manufacturing_state === 'done').length }}</span>
+
+        <div v-if="orders.length" class="orders-summary-inline">
+          <div class="summary-card clickable" :class="{ active: summaryFilter === 'all' }" @click="setSummaryFilter('all')">
+            <span class="summary-label">Total Orders</span>
+            <span class="summary-value">{{ orders.length }}</span>
+          </div>
+          <div class="summary-card clickable" :class="{ active: summaryFilter === 'review' }" @click="setSummaryFilter('review')">
+            <span class="summary-label">In Review</span>
+            <span class="summary-value">{{ orders.filter(o => o && (o.manufacturing_state === null || o.manufacturing_state === undefined || o.manufacturing_state === '')).length }}</span>
+          </div>
+          <div class="summary-card clickable" :class="{ active: summaryFilter === 'queue' }" @click="setSummaryFilter('queue')">
+            <span class="summary-label">In Queue</span>
+            <span class="summary-value">{{ orders.filter(o => o && o.manufacturing_state === 'draft').length }}</span>
+          </div>
+          <div class="summary-card clickable" :class="{ active: summaryFilter === 'progress' }" @click="setSummaryFilter('progress')">
+            <span class="summary-label">In Progress</span>
+            <span class="summary-value">{{ orders.filter(o => o && (o.manufacturing_state === 'confirmed' || o.manufacturing_state === 'progress' || o.manufacturing_state === 'planned')).length }}</span>
+          </div>
+          <div class="summary-card clickable" :class="{ active: summaryFilter === 'completed' }" @click="setSummaryFilter('completed')">
+            <span class="summary-label">Completed</span>
+            <span class="summary-value">{{ orders.filter(o => o && o.manufacturing_state === 'done').length }}</span>
+          </div>
         </div>
       </div>
 
-      <div class="search-section">
-        <div class="search-input-container">
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="m21 21-4.35-4.35"></path>
-          </svg>
-          <input
-            type="text"
-            v-model="searchQuery"
-            placeholder="Search by order number or product name..."
-            @input="filterOrders"
-            class="search-input"
+      <div v-if="filteredOrders.length" class="orders-layout">
+        <div class="orders-list">
+          <div
+            class="order-item"
+            v-for="order in filteredOrders"
+            :key="order.id"
+            :class="{ 'selected': selectedOrder && selectedOrder.id === order.id }"
+            @click="selectOrder(order)"
           >
-          <div class="search-glow"></div>
+            <div class="order-header">
+              <div class="order-identity">
+                <div class="order-number-badge">
+                  <span class="order-number">#{{ order.number || 'Unknown' }}</span>
+                </div>
+                <div class="order-datetime">
+                  <div class="order-date">{{ order.date ? formatDate(order.date) : 'Unknown date' }}</div>
+                  <div class="order-time">{{ order.date ? formatTime(order.date) : '' }}</div>
+                </div>
+              </div>
+              <div class="order-status">
+                <div class="order-status-indicator">
+                  <div :class="['status-dot', getStatusClass(order.manufacturing_state)]"></div>
+                  <span class="status-text">{{ formatStatus(order.manufacturing_state) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="orders-list" v-if="filteredOrders.length">
-        <div
-          class="order-item"
-          v-for="order in filteredOrders"
-          :key="order.id"
-          :class="{ 'expanded': expandedOrderId === order.id }"
-        >
-          <div class="order-header" @click="toggleOrderExpansion(order.id)">
-            <div class="order-identity">
-              <div class="order-number-badge">
-                <span class="order-number">#{{ order.number }}</span>
-              </div>
-              <div class="order-datetime">
-                <div class="order-date">{{ formatDate(order.date) }}</div>
-              <div class="order-time">{{ formatTime(order.date) }}</div>
-              </div>
+        <div class="order-preview" v-if="selectedOrder">
+          <div class="preview-header">
+            <div class="preview-header-content">
+              <h3 class="preview-title">Order #{{ selectedOrder.number || 'Unknown' }}</h3>
+              <div class="preview-date">{{ selectedOrder.date ? formatDate(selectedOrder.date) + ' at ' + formatTime(selectedOrder.date) : 'Unknown date' }}</div>
             </div>
-            <div class="order-status-and-toggle">
-              <div class="order-status-indicator">
-                <div :class="['status-dot', getStatusClass(order.manufacturing_state)]"></div>
-                <span class="status-text">{{ formatStatus(order.manufacturing_state) }}</span>
-              </div>
-              <div class="expand-toggle">
-                <svg
-                  class="expand-icon"
-                  :class="{ 'rotated': expandedOrderId === order.id }"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polyline points="6,9 12,15 18,9"></polyline>
-                </svg>
+            <div class="preview-progress">
+              <div class="mini-timeline-container">
+                <div class="mini-timeline">
+                  <div class="mini-timeline-track">
+                    <div class="mini-timeline-progress" :style="{ width: progressWidth(selectedOrder.manufacturing_state) }"></div>
+                    <div class="mini-timeline-glow"></div>
+                  </div>
+                  <div class="mini-timeline-steps">
+                    <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 0 ? 'active' : '']">
+                      <span class="mini-dot"></span>
+                      <span class="mini-label">Review</span>
+                    </div>
+                    <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 1 ? 'active' : '']">
+                      <span class="mini-dot"></span>
+                      <span class="mini-label">Queue</span>
+                    </div>
+                    <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 2 ? 'active' : '']">
+                      <span class="mini-dot"></span>
+                      <span class="mini-label">Progress</span>
+                    </div>
+                    <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 3 ? 'active' : '']">
+                      <span class="mini-dot"></span>
+                      <span class="mini-label">Complete</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="order-details" v-show="expandedOrderId === order.id">
-          <div class="order-production">
-              <div class="production-header">
-                <h4 class="production-title">Production Progress</h4>
-                <div class="progress-percentage">{{ Math.round((productionStageIndex(order.manufacturing_state) + 1) / 4 * 100) }}%</div>
-              </div>
-            <div class="production-timeline-container">
-            <div class="production-timeline">
-              <div class="timeline-track">
-                <div class="timeline-progress" :style="{ width: progressWidth(order.manufacturing_state) }"></div>
-                    <div class="timeline-glow"></div>
-              </div>
-              <div class="timeline-steps">
-                <div :class="['t-step', productionStageIndex(order.manufacturing_state) >= 0 ? 'active' : '']">
-                  <span class="dot"></span>
-                      <span class="label">Review</span>
-                      <div class="step-glow"></div>
-                </div>
-                <div :class="['t-step', productionStageIndex(order.manufacturing_state) >= 1 ? 'active' : '']">
-                  <span class="dot"></span>
-                      <span class="label">Queue</span>
-                      <div class="step-glow"></div>
-                </div>
-                <div :class="['t-step', productionStageIndex(order.manufacturing_state) >= 2 ? 'active' : '']">
-                  <span class="dot"></span>
-                      <span class="label">Progress</span>
-                      <div class="step-glow"></div>
-                </div>
-                <div :class="['t-step', productionStageIndex(order.manufacturing_state) >= 3 ? 'active' : '']">
-                  <span class="dot"></span>
-                      <span class="label">Complete</span>
-                      <div class="step-glow"></div>
-                </div>
-              </div>
-              </div>
-            </div>
-          </div>
+          <div class="order-details">
 
-          <div class="order-products" v-if="order.products && order.products.length">
+          <div class="order-products" v-if="selectedOrder.products && selectedOrder.products.length">
               <div class="products-header">
                 <h4 class="products-title">Order Items</h4>
-                <span class="products-count">{{ order.products.length }} item{{ order.products.length !== 1 ? 's' : '' }}</span>
+                <span class="products-count">{{ selectedOrder.products.length }} item{{ selectedOrder.products.length !== 1 ? 's' : '' }}</span>
               </div>
             <div class="products-list">
-              <div 
-                v-for="p in order.products"
-                :key="`${order.id}-${p.id}-${p.name}`"
+              <div
+                v-for="p in selectedOrder.products"
+                :key="`${selectedOrder.id}-${p.id}-${p.name}`"
                   class="product-item"
               >
                   <div class="product-info">
@@ -149,8 +146,9 @@
               </div>
             </div>
           </div>
+          </div>
         </div>
-      </div>
+
       <div v-else class="empty-state">
         <div class="empty-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -179,7 +177,7 @@ export default {
       searchQuery: '',
       selectedStatus: 'All',
       orderStatuses: ['All', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
-      expandedOrderId: null,
+      selectedOrder: null,
       summaryFilter: 'all', // 'all', 'ongoing', 'completed'
       isLoading: false
     }
@@ -187,34 +185,38 @@ export default {
   computed: {
     filteredOrders() {
       // Always show newest first
-      let filtered = [...this.orders].sort((a, b) => {
-        const da = a.date ? new Date(a.date).getTime() : 0
-        const db = b.date ? new Date(b.date).getTime() : 0
+      let filtered = (this.orders || []).filter(order => order).sort((a, b) => {
+        const da = a && a.date ? new Date(a.date).getTime() : 0
+        const db = b && b.date ? new Date(b.date).getTime() : 0
         return db - da
       })
-      
+
       // Apply status filter
       if (this.selectedStatus !== 'All') {
-        filtered = filtered.filter(order => order.status === this.selectedStatus)
+        filtered = filtered.filter(order => order && order.status === this.selectedStatus)
       }
-      
+
       // Apply search filter
       if (this.searchQuery) {
         const query = this.searchQuery.toLowerCase()
         filtered = filtered.filter(order =>
-          order.number.toLowerCase().includes(query) ||
-          order.products.some(product =>
-            product.name.toLowerCase().includes(query)
-          )
+          order && order.number && order.number.toLowerCase().includes(query) ||
+          (order && order.products && order.products.some(product =>
+            product && product.name && product.name.toLowerCase().includes(query)
+          ))
         )
       }
 
       // Apply summary filter
       if (this.summaryFilter !== 'all') {
-        if (this.summaryFilter === 'ongoing') {
-          filtered = filtered.filter(order => order.manufacturing_state !== 'done')
+        if (this.summaryFilter === 'review') {
+          filtered = filtered.filter(order => order && (order.manufacturing_state === null || order.manufacturing_state === undefined || order.manufacturing_state === ''))
+        } else if (this.summaryFilter === 'queue') {
+          filtered = filtered.filter(order => order && order.manufacturing_state === 'draft')
+        } else if (this.summaryFilter === 'progress') {
+          filtered = filtered.filter(order => order && (order.manufacturing_state === 'confirmed' || order.manufacturing_state === 'progress' || order.manufacturing_state === 'planned'))
         } else if (this.summaryFilter === 'completed') {
-          filtered = filtered.filter(order => order.manufacturing_state === 'done')
+          filtered = filtered.filter(order => order && order.manufacturing_state === 'done')
         }
       }
 
@@ -223,6 +225,17 @@ export default {
   },
   created() {
     this.fetchOrders()
+  },
+  watch: {
+    selectedStatus() {
+      this.autoSelectFirstOrder()
+    },
+    searchQuery() {
+      this.autoSelectFirstOrder()
+    },
+    summaryFilter() {
+      this.autoSelectFirstOrder()
+    }
   },
   methods: {
     productionStageIndex(state) {
@@ -245,6 +258,16 @@ export default {
       if (idx === 1) return '40%'
       if (idx === 2) return '70%'
       return '100%'
+    },
+    getDetailedProgressInfo(state) {
+      const stageIndex = this.productionStageIndex(state)
+      const stages = [
+        { name: 'Review', width: '16%', color: '#f59e0b' },
+        { name: 'Queue', width: '40%', color: 'var(--primary-color)' },
+        { name: 'Progress', width: '70%', color: '#8b5cf6' },
+        { name: 'Complete', width: '100%', color: '#10b981' }
+      ]
+      return stages[stageIndex] || stages[0]
     },
     getStatusClass(state) {
       const s = (state || '').toLowerCase()
@@ -297,7 +320,10 @@ export default {
         }
 
         const data = await response.json()
-        this.orders = Array.isArray(data.orders) ? data.orders : []
+        this.orders = Array.isArray(data.orders) ? data.orders.filter(order => order) : []
+
+        // Auto-select first order
+        this.autoSelectFirstOrder()
       } catch (error) {
         if (error.message !== 'Token expired') {
           console.error('Error fetching orders:', error)
@@ -352,8 +378,19 @@ export default {
     filterOrders() {
       // Debounced search implementation could be added here
     },
-    toggleOrderExpansion(orderId) {
-      this.expandedOrderId = this.expandedOrderId === orderId ? null : orderId
+    selectOrder(order) {
+      this.selectedOrder = order
+    },
+    autoSelectFirstOrder() {
+      // Auto-select first order if no order is currently selected or current selection is not in filtered results
+      if (this.filteredOrders.length > 0) {
+        const currentSelectedInFiltered = this.selectedOrder && this.filteredOrders.some(order => order.id === this.selectedOrder.id)
+        if (!currentSelectedInFiltered) {
+          this.selectedOrder = this.filteredOrders[0]
+        }
+      } else {
+        this.selectedOrder = null
+      }
     },
     setSummaryFilter(filter) {
       this.summaryFilter = this.summaryFilter === filter ? 'all' : filter
@@ -375,28 +412,16 @@ export default {
 
 <style scoped>
 .orders-container {
-  min-height: 100vh;
-  padding: 24px;
-  position: relative;
-  overflow: hidden;
+  padding: 32px;
+  color: #e2e8f0;
 }
 
-.orders-container::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  z-index: 0;
-}
 
 .orders-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 36px;
+  margin-bottom: 12px;
   position: relative;
   z-index: 1;
 }
@@ -406,29 +431,31 @@ export default {
 }
 
 .orders-title {
-  font-size: 28px;
   font-weight: 700;
   color: #ffffff;
-  margin: 0 0 6px 0;
-  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  margin: 0 0 8px 0;
   letter-spacing: -0.025em;
 }
 
-.orders-subtitle {
-  color: #94a3b8;
-  font-size: 16px;
-  margin: 0;
-  font-weight: 400;
-  letter-spacing: 0.025em;
+
+
+.search-and-filters-section {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 32px;
 }
 
 .search-section {
+  flex: 1;
   display: flex;
-  justify-content: center;
-  margin-bottom: 28px;
+  justify-content: start;
+}
+
+.orders-summary-inline {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .search-input-container {
@@ -451,26 +478,20 @@ export default {
 
 .search-input {
   width: 100%;
-  padding: 12px 40px 12px 40px;
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  border: 2px solid #334155;
-  border-radius: 12px;
+  padding: 12px 16px 12px 44px;
+  background: var(--secondary-color);
+  border: 1px solid #334155;
+  border-radius: 8px;
   color: #ffffff;
   font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(12px);
-  position: relative;
-  z-index: 1;
+  font-weight: 400;
+  transition: all 0.2s ease;
 }
 
 .search-input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow:
-    0 0 0 4px rgba(59, 130, 246, 0.15),
-    0 8px 32px rgba(59, 130, 246, 0.12);
-  transform: translateY(-2px);
+  border-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.05);
 }
 
 .search-input::placeholder {
@@ -478,63 +499,21 @@ export default {
   font-weight: 400;
 }
 
-.search-glow {
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
-  border-radius: 18px;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  z-index: -1;
-}
-
-.search-input:focus + .search-glow {
-  opacity: 0.5;
-}
-
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(15, 23, 42, 0.8);
-  backdrop-filter: blur(8px);
+.loading-state {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  transition: opacity 0.3s ease;
-}
-
-.loading-container {
-  text-align: center;
-  padding: 48px;
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  border-radius: 24px;
-  border: 1px solid #334155;
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+  min-height: 300px;
+  padding: 40px 20px;
 }
 
 .loading-spinner {
-  width: 60px;
-  height: 60px;
-  border: 4px solid rgba(255, 255, 255, 0.1);
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
   border-radius: 50%;
   border-top-color: #ffffff;
-  animation: spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
-  margin: 0 auto 24px;
-}
-
-.loading-text {
-  color: #e2e8f0;
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0;
+  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
@@ -551,180 +530,366 @@ export default {
 
 .orders-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 20px;
-  margin-bottom: 36px;
-  position: relative;
-  z-index: 1;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
 }
 
 .summary-card {
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  border: 1px solid #334155;
-  border-radius: 16px;
-  padding: 24px 20px;
+  background: var(--secondary-color);
+  border-radius: 8px;
+  padding: 8px 12px;
   text-align: center;
   position: relative;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.summary-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+  transition: all 0.2s ease;
+  min-width: 60px;
 }
 
 .summary-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: #475569;
 }
 
 .summary-card.clickable {
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .summary-card.clickable:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-  border-color: #475569;
-}
-
-.summary-card.clickable:active {
-  transform: translateY(-2px);
+  border-color: var(--primary-color);
 }
 
 .summary-card.active {
-  border-color: #3b82f6;
-  background: linear-gradient(135deg, #1e40af 0%, #1e293b 100%);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  border-color: var(--primary-color);
+  background: var(--primary-color);
 }
 
-.summary-card.active::before {
-  background: linear-gradient(90deg, #3b82f6, #1e40af);
+.summary-card.active .summary-label {
+  color: #93c5fd;
 }
 
 .summary-label {
   display: block;
   color: #94a3b8;
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 12px;
+  margin-bottom: 2px;
+  line-height: 1;
 }
 
 .summary-value {
   display: block;
-  font-size: 28px;
+  font-size: 16px;
   font-weight: 700;
   color: #ffffff;
   line-height: 1;
 }
 
+.orders-layout {
+  display: flex;
+  gap: 32px;
+  height: calc(100vh - 300px);
+  margin-top: 32px;
+}
+
 .orders-list {
-  display: block;
-  position: relative;
-  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.order-preview {
+  flex: 1;
+  background: var(--secondary-color);
+  border-radius: 12px;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+/* Custom scrollbar styling */
+.orders-list::-webkit-scrollbar,
+.order-preview::-webkit-scrollbar {
+  width: 8px;
+}
+
+.orders-list::-webkit-scrollbar-track,
+.order-preview::-webkit-scrollbar-track {
+  background: rgba(51, 65, 85, 0.3);
+  border-radius: 4px;
+}
+
+.orders-list::-webkit-scrollbar-thumb,
+.order-preview::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.orders-list::-webkit-scrollbar-thumb:hover,
+.order-preview::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.orders-list::-webkit-scrollbar-thumb:active,
+.order-preview::-webkit-scrollbar-thumb:active {
+  background: #94a3b8;
 }
 
 .order-item {
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  border: 1px solid #334155;
-  border-radius: 14px;
-  margin-bottom: 14px;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--secondary-color);
+  border-radius: 12px;
+  border: 1px solid #33415500;
+  padding: 16px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
-.order-item.expanded {
+.order-item:hover {
   border-color: #475569;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
-.order-item:last-child {
-  margin-bottom: 0;
+.order-item.selected {
+  border-color: var(--primary-color);
+  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.1);
 }
 
 .order-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  padding: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  align-items: center;
+  gap: 16px;
 }
 
-.order-header:hover {
-  background: rgba(51, 65, 85, 0.3);
-}
-
-.order-status-and-toggle {
+.order-identity {
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
-.expand-toggle {
-  padding: 8px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-  color: #64748b;
+.order-status {
+  display: flex;
+  justify-content: flex-end;
 }
 
-.expand-toggle:hover {
-  background: rgba(100, 116, 139, 0.1);
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  gap: 16px;
+}
+
+.preview-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 8px 0;
+}
+
+.preview-date {
+  font-size: 14px;
   color: #94a3b8;
 }
 
-.expand-icon {
-  width: 20px;
-  height: 20px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.expand-icon.rotated {
-  transform: rotate(180deg);
-}
-
-.order-identity {
+.preview-header-content {
   flex: 1;
+}
+
+.preview-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.progress-track {
+  width: 100px;
+  height: 6px;
+  background: #334155;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #22c55e;
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot-small {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-text-small {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Status dot colors for small version */
+.status-dot-small.status-review {
+  background: #f59e0b;
+}
+
+.status-dot-small.status-queue {
+  background: var(--primary-color);
+}
+
+.status-dot-small.status-progress {
+  background: #8b5cf6;
+}
+
+.status-dot-small.status-complete {
+  background: #10b981;
+}
+
+.mini-timeline-container {
+  display: flex;
+  justify-content: center;
+}
+
+.mini-timeline {
+  width: 100%;
+  max-width: 300px;
+}
+
+.mini-timeline-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: #334155;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.mini-timeline-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #22c55e;
+  border-radius: 999px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mini-timeline-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.3), transparent);
+  border-radius: 999px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.mini-timeline-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.mini-t-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.mini-t-step .mini-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #334155;
+  border: 2px solid #475569;
+  position: relative;
+  transition: all 0.2s ease;
+  z-index: 2;
+}
+
+.mini-t-step .mini-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
+  max-width: 50px;
+  line-height: 1.2;
+}
+
+.mini-t-step.active {
+  color: #ffffff;
+}
+
+.mini-t-step.active .mini-dot {
+  background: #22c55e;
+  border-color: #10b981;
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .order-number-badge {
   display: inline-flex;
   align-items: center;
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: var(--primary-color);
   color: #ffffff;
-  padding: 12px 20px;
-  border-radius: 50px;
-  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
   font-weight: 600;
-  margin-bottom: 16px;
-  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+  flex-shrink: 0;
 }
 
 .order-datetime {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 12px;
 }
 
 .order-date {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: #ffffff;
   line-height: 1.2;
 }
 
 .order-time {
-  font-size: 13px;
+  font-size: 12px;
   color: #94a3b8;
   font-weight: 400;
 }
@@ -732,38 +897,35 @@ export default {
 .order-status-indicator {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: 8px;
+  padding: 6px 12px;
   background: rgba(30, 41, 59, 0.8);
-  border-radius: 50px;
+  border-radius: 12px;
   border: 1px solid #334155;
+  flex-shrink: 0;
 }
 
 .status-dot {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .status-dot.status-review {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+  background: #f59e0b;
 }
 
 .status-dot.status-queue {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+  background: var(--primary-color);
 }
 
 .status-dot.status-progress {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+  background: #8b5cf6;
 }
 
 .status-dot.status-complete {
-  background: linear-gradient(135deg, #10b981, #059669);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+  background: #10b981;
 }
 
 .status-text {
@@ -775,16 +937,7 @@ export default {
 }
 
 .order-details {
-  border-top: 1px solid #334155;
   padding: 0;
-  max-height: 0;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.order-item.expanded .order-details {
-  max-height: 1000px;
-  padding: 28px;
 }
 
 .order-production {
@@ -795,23 +948,14 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .production-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: #ffffff;
   margin: 0;
-}
-
-.progress-percentage {
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  color: #ffffff;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: 600;
 }
 
 .production-timeline-container {
@@ -828,11 +972,11 @@ export default {
 .timeline-track {
   position: relative;
   width: 100%;
-  height: 6px;
-  background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+  height: 8px;
+  background: #334155;
   border-radius: 999px;
   overflow: hidden;
-  margin-bottom: 28px;
+  margin-bottom: 32px;
 }
 
 .timeline-progress {
@@ -840,24 +984,9 @@ export default {
   top: 0;
   left: 0;
   height: 100%;
-  background: linear-gradient(90deg, #4ade80, #22c55e, #16a34a);
+  background: #22c55e;
   border-radius: 999px;
   transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow:
-    0 0 20px rgba(34, 197, 94, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-.timeline-glow {
-  position: absolute;
-  top: -4px;
-  left: 0;
-  right: 0;
-  bottom: -4px;
-  background: linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.3), transparent);
-  border-radius: 999px;
-  opacity: 0;
-  transition: opacity 0.3s ease;
 }
 
 .timeline-steps {
@@ -874,39 +1003,26 @@ export default {
   gap: 12px;
   color: #64748b;
   position: relative;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s ease;
 }
 
 .t-step .dot {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #334155;
   border: 2px solid #475569;
   position: relative;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s ease;
   z-index: 2;
 }
 
 .t-step .label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   text-align: center;
-  max-width: 80px;
+  max-width: 70px;
   line-height: 1.3;
-}
-
-.step-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 40px;
-  height: 40px;
-  background: radial-gradient(circle, rgba(34, 197, 94, 0.2) 0%, transparent 70%);
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity 0.3s ease;
 }
 
 .t-step.active {
@@ -914,16 +1030,9 @@ export default {
 }
 
 .t-step.active .dot {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  background: #22c55e;
   border-color: #10b981;
-  box-shadow:
-    0 0 20px rgba(34, 197, 94, 0.6),
-    0 4px 12px rgba(0, 0, 0, 0.3);
-  transform: scale(1.2);
-}
-
-.t-step.active .step-glow {
-  opacity: 1;
+  transform: scale(1.1);
 }
 
 .order-products {
@@ -947,11 +1056,11 @@ export default {
 
 .products-count {
   background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
-  padding: 6px 12px;
+  color: var(--primary-color);
+  padding: 4px 10px;
   border-radius: 12px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .products-list {
@@ -964,17 +1073,16 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
+  padding: 16px 20px;
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid #334155;
-  border-radius: 12px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 8px;
+  transition: all 0.2s ease;
 }
 
 .product-item:hover {
   background: rgba(30, 41, 59, 0.9);
   border-color: #475569;
-  transform: translateX(4px);
 }
 
 .product-info {
@@ -1018,7 +1126,7 @@ export default {
 }
 
 .product-item:hover .product-arrow {
-  color: #3b82f6;
+  color: var(--primary-color);
   transform: translateX(4px);
 }
 
@@ -1060,71 +1168,124 @@ export default {
 
 @media (max-width: 1024px) {
   .orders-container {
-    padding: 20px;
+    padding: 24px;
   }
-
-  .orders-title {
-    font-size: 26px;
-  }
-
   .orders-summary {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 20px;
+  }
+
+  .search-input{
+    max-width: 50%;
+  }
+
+  .order-datetime{
+    display: none;
+  }
+
+.order-time{
+  display: none;
   }
 }
 
 @media (max-width: 768px) {
+  .orders-container {
+    padding: 20px;
+  }
+
   .orders-header {
+    text-align: center;
+  }
+
+  .search-input{
+    max-width: 50%;
+  }
+
+  .search-and-filters-section {
     flex-direction: column;
-    gap: 28px;
     align-items: stretch;
+    gap: 16px;
   }
 
-  .search-input-container {
-    max-width: none;
+  .orders-summary-inline {
+    justify-content: center;
+    gap: 12px;
   }
-
-  .orders-title {
-    font-size: 22px;
-  }
-
   .orders-summary {
     grid-template-columns: repeat(2, 1fr);
-    gap: 14px;
+    gap: 16px;
   }
 
   .summary-card {
-    padding: 20px 14px;
+    padding: 6px 10px;
+    min-width: 50px;
   }
 
   .summary-value {
-    font-size: 22px;
+    font-size: 14px;
   }
 
-  .order-item {
-    margin-bottom: 12px;
+  .summary-label {
+    font-size: 9px;
+  }
+
+  .orders-layout {
+    flex-direction: column;
+    height: auto;
+    gap: 24px;
+  }
+
+  .orders-summary-inline {
+    gap: 8px;
+  }
+
+  .orders-list {
+    flex: none;
+    max-height: 400px;
+  }
+
+  .order-preview {
+    padding: 20px;
+  }
+
+  .preview-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .preview-progress {
+    align-items: flex-start;
+    min-width: auto;
+  }
+
+  .mini-timeline {
+    max-width: 250px;
+  }
+
+  .mini-timeline-steps {
+    gap: 6px;
+  }
+
+  .mini-t-step .mini-label {
+    font-size: 9px;
+    max-width: 45px;
   }
 
   .order-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-    padding: 16px;
+    gap: 12px;
   }
 
-  .order-status-and-toggle {
-    flex-direction: row;
-    justify-content: space-between;
-    width: 100%;
+  .order-datetime {
+    gap: 8px;
   }
 
   .timeline-steps {
-    gap: 8px;
+    gap: 12px;
   }
 
   .t-step .label {
     font-size: 11px;
-    max-width: 50px;
+    max-width: 60px;
   }
 }
 
@@ -1135,26 +1296,109 @@ export default {
 
   .orders-summary {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .summary-card {
-    padding: 18px 14px;
+    padding: 6px 8px;
+    min-width: 45px;
   }
 
-  .order-item {
-    margin-bottom: 10px;
+  .summary-value {
+    font-size: 12px;
+  }
+
+  .summary-label {
+    font-size: 8px;
+  }
+
+  .orders-layout {
+    flex-direction: column;
+    height: auto;
+    gap: 20px;
+  }
+
+  .orders-list {
+    flex: none;
+    max-height: 300px;
+  }
+
+  .order-preview {
+    padding: 16px;
+  }
+
+  .preview-header {
+    gap: 10px;
+  }
+
+  .progress-track {
+    width: 80px;
+  }
+
+  .mini-timeline {
+    max-width: 200px;
+  }
+
+  .mini-timeline-steps {
+    gap: 4px;
+  }
+
+  .mini-t-step .mini-label {
+    font-size: 8px;
+    max-width: 40px;
+  }
+
+  .mini-t-step .mini-dot {
+    width: 6px;
+    height: 6px;
   }
 
   .order-header {
-    padding: 14px;
+    gap: 8px;
   }
 
-  .order-item.expanded .order-details {
-    padding: 20px;
+  .order-number-badge {
+    font-size: 11px;
+    padding: 4px 10px;
   }
 
-  .production-timeline {
-    padding: 20px 0;
+  .order-date {
+    font-size: 13px;
+  }
+
+  .order-time {
+    font-size: 11px;
+  }
+
+  .search-input{
+    max-width: 50%;
+  }
+}
+
+@media (max-width: 360px) {
+  .order-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .order-datetime {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .order-number-badge {
+    margin-bottom: 0;
+  }
+
+  .orders-summary-inline {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .search-input{
+    max-width: 50%;
   }
 }
 </style>
