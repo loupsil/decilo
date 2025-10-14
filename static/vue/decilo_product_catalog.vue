@@ -5,32 +5,69 @@
       <p class="subtitle">Browse our collection of professional ear tips</p>
     </div>
 
-    <div class="catalog-filters">
-      <div class="search-bar">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <path d="m21 21-4.35-4.35"></path>
-        </svg>
-        <input
-          type="text"
-          v-model="searchQuery"
-          placeholder="Search ear tips..."
-          @input="filterProducts"
-        >
-      </div>
-    </div>
+    <div class="catalog-content">
+      <!-- Left Sidebar for Categories -->
+      <div class="categories-sidebar">
+        <!-- Search Bar at the top -->
+        <div class="sidebar-search">
+          <div class="search-bar">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input
+              type="text"
+              v-model="searchQuery"
+              placeholder="Search ear tips..."
+              @input="filterProducts"
+            >
+          </div>
+        </div>
 
-    <div class="products-grid" ref="productsGrid">
+        <div class="categories-section">
+          <div class="categories-header">
+            <h3>Categories</h3>
+          </div>
+          <div class="categories-list">
+            <label class="category-checkbox-item">
+              <input
+                type="checkbox"
+                :checked="selectedCategories.length === 0"
+                @change="toggleAllCategories"
+              >
+              <span class="checkmark"></span>
+              All Categories
+            </label>
+            <label
+              v-for="category in categories"
+              :key="category.id"
+              class="category-checkbox-item"
+            >
+              <input
+                type="checkbox"
+                :checked="selectedCategories.includes(category.name)"
+                @change="toggleCategory(category.name)"
+              >
+              <span class="checkmark"></span>
+              {{ category.name }}
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Content Area -->
+      <div class="main-content">
+        <div class="products-grid" ref="productsGrid">
       <div v-if="isLoading" class="loading-overlay">
         <div class="loading-spinner"></div>
       </div>
       
-      <div v-else-if="products.length === 0" class="no-products">
+      <div v-else-if="filteredProducts.length === 0" class="no-products">
         <p>No products found</p>
       </div>
-      
+
       <template v-else>
-        <div v-for="product in products" :key="product.id" class="product-card">
+        <div v-for="product in paginatedProducts" :key="product.id" class="product-card">
           <div class="product-image" @click="showProductDetails(product)">
             <img :src="product.image_url" :alt="product.name">
             <div class="image-overlay">
@@ -39,6 +76,9 @@
           </div>
             <div class="product-details">
               <h3>{{ product.name }}</h3>
+              <div class="product-category">
+                <span class="category-badge">{{ product.category }}</span>
+              </div>
               <p class="product-description">{{ product.description }}</p>
               <div class="product-actions">
                 <button class="details-btn" @click="showProductDetails(product)">View Details</button>
@@ -47,20 +87,22 @@
         </div>
       </template>
     </div>
+    </div>
+    </div>
 
     <!-- Pagination -->
-    <div v-if="totalProducts > itemsPerPage" class="pagination">
-      <button 
+    <div v-if="filteredProducts.length > itemsPerPage" class="pagination">
+      <button
         :disabled="currentPage === 1"
         @click="changePage(currentPage - 1)"
         class="page-btn"
       >
         Previous
       </button>
-      
+
       <div class="page-numbers">
-        <button 
-          v-for="page in Math.ceil(totalProducts / itemsPerPage)"
+        <button
+          v-for="page in Math.ceil(filteredProducts.length / itemsPerPage)"
           :key="page"
           :class="['page-number', { active: currentPage === page }]"
           @click="changePage(page)"
@@ -69,8 +111,8 @@
         </button>
       </div>
       
-      <button 
-        :disabled="currentPage >= Math.ceil(totalProducts / itemsPerPage)"
+      <button
+        :disabled="currentPage >= Math.ceil(filteredProducts.length / itemsPerPage)"
         @click="changePage(currentPage + 1)"
         class="page-btn"
       >
@@ -124,6 +166,7 @@ export default {
   data() {
     return {
       products: [],
+      categories: [],
       searchQuery: '',
       selectedProduct: null,
       isLoading: false,
@@ -132,6 +175,7 @@ export default {
       totalProducts: 0,
       searchTimeout: null,
       selectedVariants: {},
+      selectedCategories: [],
     }
   },
   computed: {
@@ -139,8 +183,8 @@ export default {
       let filtered = this.products
 
       // Apply category filter
-      if (this.selectedCategory !== 'All') {
-        filtered = filtered.filter(product => product.category === this.selectedCategory)
+      if (this.selectedCategories.length > 0) {
+        filtered = filtered.filter(product => this.selectedCategories.includes(product.category))
       }
 
       // Apply search filter
@@ -153,6 +197,11 @@ export default {
       }
 
       return filtered
+    },
+    paginatedProducts() {
+      const start = (this.currentPage - 1) * this.itemsPerPage
+      const end = start + this.itemsPerPage
+      return this.filteredProducts.slice(start, end)
     }
   },
   created() {
@@ -165,7 +214,7 @@ export default {
         searchQuery: this.searchQuery || '',
         currentPage: this.currentPage || 1,
         itemsPerPage: this.itemsPerPage || 12,
-        selectedCategory: this.selectedCategory || 'All'
+        selectedCategories: this.selectedCategories || []
       })
     },
     async fetchProducts() {
@@ -182,6 +231,8 @@ export default {
         const cached = productCache.get(cacheKey)
         this.products = cached.products
         this.totalProducts = cached.totalProducts
+        this.categories = cached.categories || []
+        this.selectedCategories = cached.selectedCategories || []
         this.isLoading = false
         return
       }
@@ -238,11 +289,17 @@ export default {
         console.log('📦 Received products data:', {
           totalProducts: data.total,
           numberOfProducts: data.products.length,
+          categoriesCount: data.categories ? data.categories.length : 0,
           firstProduct: data.products[0] // Show sample of first product
         })
-        
+
         // Transform the Odoo data to match our component's structure
         this.products = data.products.map(product => {
+          // Extract short name from full category path (e.g., "Goods / Ear Tips" -> "Ear Tips")
+          const fullCategoryName = product.categ_id ? product.categ_id[1] : 'Uncategorized'
+          const shortCategoryName = fullCategoryName.includes(' / ') ?
+            fullCategoryName.split(' / ').pop() : fullCategoryName
+
           const transformedProduct = {
             id: product.id,
             name: product.name,
@@ -251,22 +308,36 @@ export default {
             price: product.list_price || 0,
             image_url: product.image_1920 ? `data:image/png;base64,${product.image_1920}` : '/static/images/product-placeholder.jpg',
             specifications: this.extractSpecifications(product),
-            variants: product.variants || []
+            variants: product.variants || [],
+            category: shortCategoryName,
+            categoryId: product.categ_id ? product.categ_id[0] : null  // [0] contains the category ID
           }
           console.log(`✨ Transformed product ${product.id}:`, transformedProduct)
           return transformedProduct
         })
 
         this.totalProducts = data.total
+
+        // Use categories from API response instead of extracting from products
+        this.categories = (data.categories || []).map(category => ({
+          id: category.id,
+          name: category.name, // Use short name for cleaner display
+          completeName: category.complete_name,
+          parentId: category.parent_id ? category.parent_id[0] : null
+        }))
+
         console.log('✅ Products loaded successfully:', {
           displayedProducts: this.products.length,
-          totalProducts: this.totalProducts
+          totalProducts: this.totalProducts,
+          categories: this.categories.length
         })
 
         // Store in cache
         productCache.set(cacheKey, {
           products: this.products,
-          totalProducts: this.totalProducts
+          totalProducts: this.totalProducts,
+          categories: this.categories,
+          selectedCategories: this.selectedCategories
         })
       } catch (error) {
         console.error('❌ Error fetching products:', {
@@ -288,22 +359,20 @@ export default {
     extractSpecifications(product) {
       // Extract specifications from Odoo product data
       const specs = []
-      
+
       if (product.default_code) {
         specs.push(`Product Code: ${product.default_code}`)
       }
-      
+
       // Add more specifications based on available Odoo fields
-      
+
       return specs
     },
+
     stripHtml(htmlString) {
       const container = document.createElement('div')
       container.innerHTML = htmlString || ''
       return (container.textContent || container.innerText || '').trim()
-    },
-    selectCategory(category) {
-      this.selectedCategory = category
     },
     filterProducts() {
       console.log('🔎 Search query changed:', this.searchQuery)
@@ -331,12 +400,30 @@ export default {
       this.$refs.productsGrid?.scrollIntoView({ behavior: 'smooth' })
     },
 
-    selectCategory(category) {
-      console.log('📑 Category selected:', category)
-      this.selectedCategory = category
-      this.currentPage = 1 // Reset to first page when changing category
-      this.fetchProducts()
+    toggleCategory(category) {
+      console.log('📑 Category toggled:', category)
+      const index = this.selectedCategories.indexOf(category)
+      if (index > -1) {
+        // Remove category if already selected
+        this.selectedCategories.splice(index, 1)
+      } else {
+        // Add category if not selected
+        this.selectedCategories.push(category)
+      }
+      this.currentPage = 1 // Reset to first page when changing category selection
     },
+    toggleAllCategories() {
+      console.log('📑 All categories toggled')
+      if (this.selectedCategories.length === 0) {
+        // If none are selected, select all categories
+        this.selectedCategories = this.categories.map(cat => cat.name)
+      } else {
+        // If some or all are selected, deselect all
+        this.selectedCategories = []
+      }
+      this.currentPage = 1 // Reset to first page when changing category selection
+    },
+
     showProductDetails(product) {
       this.selectedProduct = product
       // Reset selected variants when showing a new product
@@ -407,7 +494,183 @@ export default {
   min-height: 100vh;
   padding: 24px;
   position: relative;
-  overflow: hidden;
+}
+
+.catalog-content {
+  display: flex;
+  gap: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+  height: calc(100vh - 120px); /* Full height minus header */
+}
+
+/* Categories Sidebar */
+.categories-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  background: var(--secondary-color);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid #334155;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sidebar Search Section */
+.sidebar-search {
+  margin-bottom: 24px;
+}
+
+.sidebar-search .search-bar {
+  position: relative;
+}
+
+.sidebar-search .search-bar input {
+  padding: 14px 16px 14px 44px;
+  background: rgba(51, 65, 85, 0.8);
+  border: 2px solid #475569;
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-search .search-bar input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  background: rgba(51, 65, 85, 1);
+}
+
+.sidebar-search .search-bar input::placeholder {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.sidebar-search .search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  color: #64748b;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Categories Section */
+.categories-section {
+  flex: 1;
+}
+
+.categories-header {
+  margin-bottom: 16px;
+}
+
+.categories-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--primary-color);
+}
+
+.categories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 280px); /* Account for header, search, and padding */
+  overflow-y: auto;
+  padding-right: 4px; /* Space for scrollbar */
+}
+
+/* Custom scrollbar for categories list */
+.categories-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.categories-list::-webkit-scrollbar-track {
+  background: rgba(51, 65, 85, 0.3);
+  border-radius: 3px;
+}
+
+.categories-list::-webkit-scrollbar-thumb {
+  background: var(--primary-color);
+  border-radius: 3px;
+}
+
+.categories-list::-webkit-scrollbar-thumb:hover {
+  background: #4f83cc;
+}
+
+.category-checkbox-item {
+  display: flex;
+  width: 100%;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 8px;
+}
+
+.category-checkbox-item:hover {
+  background: #334155;
+  border-color: #64748b;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.category-checkbox-item input[type="checkbox"] {
+  display: none;
+}
+
+.category-checkbox-item .checkmark {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #475569;
+  border-radius: 4px;
+  margin-right: 12px;
+  background: rgba(51, 65, 85, 0.8);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.category-checkbox-item input[type="checkbox"]:checked + .checkmark {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.category-checkbox-item input[type="checkbox"]:checked + .checkmark::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 6px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.category-checkbox-item:hover .checkmark {
+  border-color: #64748b;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* Main Content Area */
+.main-content {
+  flex: 1;
+  min-width: 0; /* Allow content to shrink */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .product-catalog::before {
@@ -422,7 +685,7 @@ export default {
 }
 
 .catalog-header {
-  text-align: center;
+  text-align: start;
   margin-bottom: 36px;
   position: relative;
   z-index: 1;
@@ -444,59 +707,6 @@ export default {
   letter-spacing: 0.025em;
 }
 
-.catalog-filters {
-  margin-bottom: 24px;
-  position: relative;
-  z-index: 1;
-}
-
-.search-bar {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.search-bar input {
-  width: 100%;
-  max-width: 400px;
-  padding: 12px 40px 12px 40px;
-  background: var(--secondary-color);
-  border: 2px solid #334155;
-  border-radius: 12px;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(12px);
-  position: relative;
-  z-index: 1;
-}
-
-.search-bar input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow:
-    0 0 0 4px rgba(59, 130, 246, 0.15),
-    0 8px 32px rgba(59, 130, 246, 0.12);
-  transform: translateY(-2px);
-}
-
-.search-bar input::placeholder {
-  color: #64748b;
-  font-weight: 400;
-}
-
-.search-icon {
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
-  color: #64748b;
-  z-index: 2;
-  pointer-events: none;
-}
 
 
 
@@ -507,16 +717,15 @@ export default {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 20px;
   min-height: 320px; /* Ensure there's always space for the spinner */
+  padding-bottom: 20px;
 }
 
 .product-card {
   background: var(--secondary-color);
   border: 1px solid #334155;
   border-radius: 16px;
-  overflow: hidden;
   position: relative;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  min-height: 320px;
   display: flex;
   flex-direction: column;
 }
@@ -600,6 +809,23 @@ export default {
   font-size: 18px;
   font-weight: 600;
   line-height: 1.3;
+}
+
+.product-category {
+  margin-bottom: 12px;
+}
+
+.category-badge {
+  display: inline-block;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .product-description {
@@ -726,6 +952,14 @@ export default {
     font-size: 26px;
   }
 
+  .catalog-content {
+    gap: 20px;
+  }
+
+  .categories-sidebar {
+    width: 260px;
+  }
+
   .products-grid {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 16px;
@@ -736,6 +970,24 @@ export default {
 @media (max-width: 768px) {
   .product-catalog {
     padding: 16px;
+  }
+
+  .catalog-content {
+    flex-direction: column;
+    gap: 16px;
+    height: auto;
+  }
+
+  .categories-sidebar {
+    display: none;
+  }
+
+  .main-content {
+    order: 1;
+  }
+
+  .sidebar-search {
+    margin-bottom: 20px;
   }
 
   .catalog-header {
@@ -810,8 +1062,6 @@ export default {
   }
 
 }
-
-
 
 
 </style>

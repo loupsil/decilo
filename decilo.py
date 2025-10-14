@@ -297,7 +297,7 @@ class OdooXMLRPCClient(OdooClient):
         if domain is None:
             domain = []
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids']
+            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id']
             
         # First get product IDs
         product_ids = models.execute_kw(
@@ -364,7 +364,7 @@ class OdooXMLRPCClient(OdooClient):
         models = self._get_models()
         
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids']
+            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id']
             
         # First get the product with basic fields and attribute lines
         product = models.execute_kw(
@@ -471,15 +471,21 @@ def get_products(current_user):
         offset = request.args.get('offset', type=int, default=0)
         order = request.args.get('order', 'name asc')
         search = request.args.get('search')
-        
-        # Build domain
+        category_id = request.args.get('category_id', type=int)
+
+        # Build domain - filter for Ear Tips categories only for now
         domain = [
             ('sale_ok', '=', True),  # Only show products that can be sold
-            ('categ_id.complete_name', 'ilike', 'Goods / Ear Tips')  # Filter for Ear Tips category
+            ('categ_id.name', 'ilike', '%Ear Tips%')  # Only show Ear Tips categories
         ]
+
+        # Add category filter if provided
+        if category_id:
+            domain.append(('categ_id', '=', category_id))
+
         if search:
             domain.append(('name', 'ilike', search))
-            
+
         # Get products
         products = odoo_client.search_products(
             domain=domain,
@@ -487,13 +493,36 @@ def get_products(current_user):
             limit=limit,
             order=order
         )
-        
+
+        # Get all categories for filtering
+        uid = get_uid()
+        models = get_odoo_models()
+
+        # Get categories that have products
+        category_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.category', 'search',
+            [[('id', 'in', list(set([p.get('categ_id', [0])[0] for p in products if p.get('categ_id')])))]],
+            {'order': 'complete_name'}
+        )
+
+        categories = []
+        if category_ids:
+            category_records = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.category', 'read',
+                [category_ids],
+                {'fields': ['id', 'name', 'complete_name', 'parent_id']}
+            )
+            categories = category_records
+
         return jsonify({
             'products': products,
+            'categories': categories,
             'total': len(products),
             'offset': offset
         })
-        
+
     except Exception as e:
         error_msg = f"Error fetching products: {str(e)}"
         logger.error(error_msg, exc_info=True)
