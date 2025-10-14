@@ -13,7 +13,7 @@ app.register_blueprint(decilo_bp)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('decilo.html', is_portal=True)
 
 @app.route('/decilo')
 def decilo():
