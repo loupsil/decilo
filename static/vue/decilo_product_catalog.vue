@@ -1339,8 +1339,6 @@ export default {
   max-width: 90%;
   max-height: 95vh;
   position: relative;
-  overflow-y: auto;
-  overflow-x: hidden;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
 
@@ -1426,6 +1424,7 @@ export default {
   justify-content: space-between;
   margin: 0;
   padding: 20px 20px;
+  padding-right: 100px;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border-bottom: 1px solid #334155;
   position: absolute;
@@ -2270,6 +2269,8 @@ export default {
 
   .modal-content {
     max-width: 90%;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .modal-product-details {
@@ -2330,6 +2331,8 @@ export default {
   .modal-content {
     max-width: 95%;
     border-radius: 14px;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .close-btn {
@@ -2348,6 +2351,7 @@ export default {
 
   .order-progress {
     padding: 16px 12px;
+    padding-right: 80px;
     flex-wrap: wrap;
     gap: 6px;
     justify-content: center;
@@ -2544,6 +2548,8 @@ export default {
   .modal-content {
     max-width: 98%;
     max-height: 95%;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .modal-product-details {
@@ -2555,6 +2561,7 @@ export default {
 
   .order-progress {
     padding: 10px 6px;
+    padding-right: 60px;
     gap: 3px;
     min-height: 50px;
     padding-right : 60px;
