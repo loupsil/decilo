@@ -507,20 +507,6 @@ export default {
   padding: 40px 20px;
 }
 
-.loading-spinner {
-  width: 48px;
-  height: 48px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  border-top-color: #ffffff;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 @keyframes rotate {
   to {
