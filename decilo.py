@@ -9,7 +9,7 @@ from functools import wraps
 import base64
 import json
 
-# Configure logging
+#  Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
