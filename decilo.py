@@ -476,7 +476,7 @@ def get_products(current_user):
         # Build domain - filter for Ear Tips categories only for now
         domain = [
             ('sale_ok', '=', True),  # Only show products that can be sold
-            ('categ_id.name', 'ilike', '%Ear Tips%')  # Only show Ear Tips categories
+            ('categ_id.name', 'ilike', '%Ear%')  # Only show Ear Tips categories
         ]
 
         # Add category filter if provided
