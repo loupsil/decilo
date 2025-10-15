@@ -1281,6 +1281,7 @@ def create_order(current_user):
         else:
             body = "Order created via portal."
 
+        # Post message on sale order
         models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'sale.order', 'message_post',
@@ -1292,6 +1293,20 @@ def create_order(current_user):
             'subtype_xmlid': 'mail.mt_note',     # 🔑 internal note
             }
         )
+
+        # Post same message on patient contact if patient_info has ID
+        if patient_info and patient_info.get('id'):
+            models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'res.partner', 'message_post',
+                [patient_info['id']],
+                {
+                'body': body,
+                'body_is_html': True,
+                'message_type': 'comment',
+                'subtype_xmlid': 'mail.mt_note',
+                }
+            )
 
         # Attach uploaded documents to the order
         attachment_ids = []
