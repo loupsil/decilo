@@ -130,7 +130,7 @@
             <div v-else-if="clientType === 'existing'" class="existing-client-section">
               <div class="client-type-header">
                 <h3>Existing Client</h3>
-                <button class="change-client-type-btn" @click="changeClientType">
+                <button v-if="!isWithPreviousOrder" class="change-client-type-btn" @click="changeClientType">
                   Change to New Client
                 </button>
               </div>
