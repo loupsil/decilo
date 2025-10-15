@@ -1308,14 +1308,30 @@ def create_order(current_user):
                 }
             )
 
-        # Attach uploaded documents to the order
+        # Attach uploaded documents to the order and prepare patient binary field updates
         attachment_ids = []
+        impression_b64_by_side = {
+            'right': None,
+            'left': None
+        }
+        impression_filename_by_side = {
+            'right': None,
+            'left': None
+        }
         for key in ['rightImpressionDoc', 'leftImpressionDoc']:
             file = files.get(key)
             if file and getattr(file, 'filename', None):
                 file_bytes = file.read()
                 if file_bytes:
                     datas_b64 = base64.b64encode(file_bytes).decode('ascii')
+                    # Keep a copy for contact binary fields
+                    if key == 'rightImpressionDoc':
+                        impression_b64_by_side['right'] = datas_b64
+                        impression_filename_by_side['right'] = file.filename
+                    elif key == 'leftImpressionDoc':
+                        impression_b64_by_side['left'] = datas_b64
+                        impression_filename_by_side['left'] = file.filename
+                    # Create attachment on sale order
                     att_id = models.execute_kw(
                         ODOO_DB, uid, ODOO_API_KEY,
                         'ir.attachment', 'create',
@@ -1338,6 +1354,50 @@ def create_order(current_user):
                 [order_id],
                 {'body': 'Attached impression documents.', 'attachment_ids': attachment_ids}
             )
+            
+        # Also update patient contact binary fields if available
+        if patient_info and patient_info.get('id'):
+            partner_vals = {}
+            if impression_b64_by_side['left']:
+                partner_vals['x_studio_left_ear_impression'] = impression_b64_by_side['left']
+            if impression_b64_by_side['right']:
+                partner_vals['x_studio_right_ear_impression'] = impression_b64_by_side['right']
+
+            # Attempt to also set companion filename fields if they exist
+            companion_fields = [
+                'x_studio_left_ear_impression_filename',
+                'x_studio_right_ear_impression_filename'
+            ]
+            existing = {}
+            try:
+                existing = models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner', 'fields_get',
+                    [companion_fields]
+                ) or {}
+            except Exception:
+                existing = {}
+
+            if 'x_studio_left_ear_impression_filename' in existing and impression_filename_by_side['left']:
+                partner_vals['x_studio_left_ear_impression_filename'] = impression_filename_by_side['left']
+            if 'x_studio_right_ear_impression_filename' in existing and impression_filename_by_side['right']:
+                partner_vals['x_studio_right_ear_impression_filename'] = impression_filename_by_side['right']
+
+            if partner_vals:
+                models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner', 'write',
+                    [[patient_info['id']], partner_vals]
+                )
+
+            # Also post attachments message on patient contact if patient_info has ID
+            if patient_info and patient_info.get('id'):
+                models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner', 'message_post',
+                    [patient_info['id']],
+                    {'body': 'Attached impression documents.', 'attachment_ids': attachment_ids}
+                )
 
         # Read order basic info for response
         order = models.execute_kw(
