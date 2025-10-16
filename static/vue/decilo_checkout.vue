@@ -301,7 +301,7 @@
                   <li>
                     <strong>Right:</strong>
                     <template v-if="earImpressions.right?.exists">
-                      <a class="doc-link" :href="downloadEarUrl('right')" @click.prevent="downloadEar('right')">
+                      <a class="doc-link right-doc" :href="downloadEarUrl('right')" @click.prevent="downloadEar('right')">
                         <span class="doc-icon" aria-hidden="true">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 5v10"/>
@@ -319,7 +319,7 @@
                   <li>
                     <strong>Left:</strong>
                     <template v-if="earImpressions.left?.exists">
-                      <a class="doc-link" :href="downloadEarUrl('left')" @click.prevent="downloadEar('left')">
+                      <a class="doc-link left-doc" :href="downloadEarUrl('left')" @click.prevent="downloadEar('left')">
                         <span class="doc-icon" aria-hidden="true">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 5v10"/>
@@ -1324,6 +1324,16 @@ export default {
   border-color: #475569;
   background: rgba(30, 41, 59, 0.8);
   transform: translateY(-1px);
+}
+
+/* Color accents for previous-order doc links */
+.doc-link.right-doc {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: linear-gradient(0deg, rgba(239,68,68,0.10), rgba(239,68,68,0.06));
+}
+.doc-link.left-doc {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: linear-gradient(0deg, rgba(59,130,246,0.10), rgba(59,130,246,0.06));
 }
 
 .doc-icon svg {
