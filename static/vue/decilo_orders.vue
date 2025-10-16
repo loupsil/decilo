@@ -88,6 +88,9 @@
           <div class="preview-header">
             <div class="preview-header-content">
               <h3 class="preview-title">Order #{{ selectedOrder.number || 'Unknown' }}</h3>
+              <div v-if="selectedOrder.manufacturing_order_number" class="preview-manufacturing-order">
+                Manufacturing Order: {{ selectedOrder.manufacturing_order_number }}
+              </div>
               <div class="preview-date">{{ selectedOrder.date ? formatDate(selectedOrder.date) + ' at ' + formatTime(selectedOrder.date) : 'Unknown date' }}</div>
             </div>
             <div class="preview-progress">
@@ -941,6 +944,13 @@ export default {
   font-weight: 600;
   color: #ffffff;
   margin: 0 0 8px 0;
+}
+
+.preview-manufacturing-order {
+  font-size: 14px;
+  color: #64748b;
+  margin: 4px 0 8px 0;
+  font-weight: 500;
 }
 
 .preview-date {

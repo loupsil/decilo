@@ -794,7 +794,7 @@ def get_customer_orders(current_user):
         )
 
         # Fetch related manufacturing orders (mrp.production) by origin = sale order name
-        origin_to_mo_state = {}
+        origin_to_mo_data = {}
         order_names = [o.get('name') for o in orders if o.get('name')]
         if order_names:
             mo_ids = models.execute_kw(
@@ -808,14 +808,15 @@ def get_customer_orders(current_user):
                     ODOO_DB, uid, ODOO_API_KEY,
                     'mrp.production', 'read',
                     [mo_ids],
-                    {'fields': ['origin', 'state']}
+                    {'fields': ['origin', 'state', 'name']}
                 )
-                # Keep the latest state per origin (ids sorted desc ensures first is latest)
+                # Keep the latest data per origin (ids sorted desc ensures first is latest)
                 for rec in mo_records:
                     origin = rec.get('origin')
                     state = rec.get('state')
-                    if origin and origin not in origin_to_mo_state:
-                        origin_to_mo_state[origin] = state
+                    name = rec.get('name')
+                    if origin and origin not in origin_to_mo_data:
+                        origin_to_mo_data[origin] = {'state': state, 'name': name}
 
         # Collect all line ids and shipping partner ids for batch reads
         all_line_ids = []
@@ -904,12 +905,14 @@ def get_customer_orders(current_user):
                 elif isinstance(xp, int):
                     patient = {'id': xp, 'name': None}
 
+            mo_data = origin_to_mo_data.get(o.get('name'))
             response_orders.append({
                 'id': o['id'],
                 'number': o.get('name'),
                 'date': o.get('date_order'),
                 'status': map_state_to_status(o.get('state')),
-                'manufacturing_state': origin_to_mo_state.get(o.get('name')),
+                'manufacturing_state': mo_data.get('state') if mo_data else None,
+                'manufacturing_order_number': mo_data.get('name') if mo_data else None,
                 'products': products,
                 'subtotal': o.get('amount_untaxed'),
                 'shipping': None,
