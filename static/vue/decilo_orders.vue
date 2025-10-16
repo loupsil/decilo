@@ -67,7 +67,10 @@
                 </div>
                 <div class="order-datetime">
                   <div class="order-date">{{ order.date ? formatDate(order.date) : 'Unknown date' }}</div>
-                  <div class="order-time">{{ order.date ? formatTime(order.date) : '' }}</div>
+                  <div class="order-time">
+                    {{ order.date ? formatTime(order.date) : '' }}
+                    <span v-if="order.patient?.name" class="doc-filename" style="margin-left:8px;">{{ '• ' + order.patient.name }}</span>
+                  </div>
                 </div>
               </div>
               <div class="order-status">
@@ -77,6 +80,7 @@
                 </div>
               </div>
             </div>
+            
           </div>
         </div>
 
@@ -118,34 +122,131 @@
 
           <div class="order-details">
 
-          <div class="order-products" v-if="selectedOrder.products && selectedOrder.products.length">
-              <div class="products-header">
-                <h4 class="products-title">Order Items</h4>
+            <div class="preview-section" v-if="selectedOrder.products && selectedOrder.products.length">
+              <div class="section-header" style="display:flex;align-items:center;justify-content:space-between;">
+                <h4 class="section-title">Order Items</h4>
                 <span class="products-count">{{ selectedOrder.products.length }} item{{ selectedOrder.products.length !== 1 ? 's' : '' }}</span>
               </div>
-            <div class="products-list">
-              <div
-                v-for="p in selectedOrder.products"
-                :key="`${selectedOrder.id}-${p.id}-${p.name}`"
-                  class="product-item"
-              >
-                  <div class="product-info">
-                <span class="product-name">{{ p.name }}</span>
-                    <div class="product-meta">
-                      <span class="product-qty" v-if="p.quantity">Quantity: {{ p.quantity }}</span>
-                      <span class="product-separator" v-if="p.quantity">•</span>
-                      <span class="product-id">#{{ p.id }}</span>
+              <div class="section-body">
+                <div class="products-list">
+                  <div
+                    v-for="p in selectedOrder.products"
+                    :key="`${selectedOrder.id}-${p.id}-${p.name}`"
+                    class="product-item"
+                  >
+                    <div class="product-info">
+                      <span class="product-name">{{ p.name }}</span>
+                      <div class="product-meta">
+                        <span class="product-qty" v-if="p.quantity">Quantity: {{ p.quantity }}</span>
+                        <span class="product-separator" v-if="p.quantity">•</span>
+                        <span class="product-id">#{{ p.id }}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div class="product-arrow">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="9,18 15,12 9,6"></polyline>
-                    </svg>
+                    <div class="product-arrow">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9,18 15,12 9,6"></polyline>
+                      </svg>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+            <!-- Preview sections: Documents, Patient information, Notes -->
+            <div class="preview-sections" v-if="selectedOrder">
+              <!-- Documents -->
+              <div class="preview-section">
+                <div class="section-header">
+                  <h4 class="section-title">Documents</h4>
+                </div>
+                <div class="section-body">
+                  <div v-if="selectedOrderPatient?.id">
+                    <div v-if="docsLoading" class="dropdown-loading">
+                      <div class="loading-spinner-small"></div>
+                      <span>Loading documents...</span>
+                    </div>
+                    <div v-else>
+                      <div v-if="docsError" class="patient-validation-error">{{ docsError }}</div>
+                      <ul v-else class="existing-docs-list">
+                        <li>
+                          <strong>Right:</strong>
+                          <template v-if="docs.right?.exists">
+                            <a class="doc-link" href="#" @click.prevent="downloadDoc('right')">
+                              <span class="doc-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                  <path d="M12 5v10"/>
+                                  <path d="m7 10 5 5 5-5"/>
+                                  <path d="M5 19h14"/>
+                                </svg>
+                              </span>
+                              <span class="doc-filename">{{ docs.right.filename }}</span>
+                            </a>
+                          </template>
+                          <template v-else>
+                            <span>Not found</span>
+                          </template>
+                        </li>
+                        <li>
+                          <strong>Left:</strong>
+                          <template v-if="docs.left?.exists">
+                            <a class="doc-link" href="#" @click.prevent="downloadDoc('left')">
+                              <span class="doc-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                  <path d="M12 5v10"/>
+                                  <path d="m7 10 5 5 5-5"/>
+                                  <path d="M5 19h14"/>
+                                </svg>
+                              </span>
+                              <span class="doc-filename">{{ docs.left.filename }}</span>
+                            </a>
+                          </template>
+                          <template v-else>
+                            <span>Not found</span>
+                          </template>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div v-else class="section-empty">No documents available</div>
+                </div>
+              </div>
+
+              <!-- Patient information -->
+              <div class="preview-section">
+                <div class="section-header">
+                  <h4 class="section-title">Patient information</h4>
+                </div>
+                <div class="section-body">
+                  <div class="products-list">
+                    <div class="product-item">
+                      <div class="product-info">
+                        <span class="product-name">Name</span>
+                        <div class="product-meta">
+                          <span class="product-id">{{ selectedOrderPatient?.name || '—' }}</span>
+                        </div>
+                      </div>
+                      <div class="product-arrow">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="9,18 15,12 9,6"></polyline>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Notes -->
+              <div class="preview-section">
+                <div class="section-header">
+                  <h4 class="section-title">Notes</h4>
+                </div>
+                <div class="section-body">
+                  <div v-if="selectedOrder.patient_comment" class="patient-notes-box">
+                    <div class="patient-notes-text" v-html="selectedOrder.patient_comment"></div>
+                  </div>
+                  <div v-else class="section-empty">No notes</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -179,7 +280,13 @@ export default {
       orderStatuses: ['All', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
       selectedOrder: null,
       summaryFilter: 'all', // 'all', 'ongoing', 'completed'
-      isLoading: false
+      isLoading: false,
+      selectedOrderPartner: null,
+      selectedOrderPatient: null,
+      docs: { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } },
+      docsLoading: false,
+      docsError: '',
+      lastDetailsOrderId: null,
     }
   },
   computed: {
@@ -235,9 +342,55 @@ export default {
     },
     summaryFilter() {
       this.autoSelectFirstOrder()
+    },
+    selectedOrder: {
+      handler(newOrder) {
+        // Fetch patient/docs only when order selection actually changes
+        if (newOrder && newOrder.id && newOrder.id !== this.lastDetailsOrderId) {
+          this.loadSelectedOrderPartner(newOrder.id)
+        } else if (!newOrder) {
+          this.docs = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
+          this.docsError = ''
+          this.selectedOrderPartner = null
+          this.selectedOrderPatient = null
+          this.lastDetailsOrderId = null
+        }
+      },
+      immediate: true
     }
   },
   methods: {
+    async loadSelectedOrderPartner(orderId) {
+      try {
+        const token = localStorage.getItem('decilo_token')
+        if (!token) throw new Error('Authentication required')
+        const res = await fetch(`/decilo-api/orders/${orderId}`, { headers: { 'Authorization': `Bearer ${token}` } })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body?.error || 'Failed to load order details')
+        this.selectedOrderPartner = body?.partner || null
+        this.selectedOrderPatient = body?.patient || null
+        // Merge patient_comment without changing object reference to avoid retriggering watcher
+        if (this.selectedOrder && this.selectedOrder.id === orderId) {
+          const comment = body?.patient_comment || ''
+          if (this.$set) {
+            this.$set(this.selectedOrder, 'patient_comment', comment)
+          } else {
+            this.selectedOrder.patient_comment = comment
+          }
+        }
+        this.lastDetailsOrderId = orderId
+        if (this.selectedOrderPatient?.id) {
+          this.fetchOrderPatientDocs(this.selectedOrderPatient.id, this.selectedOrderPatient.name)
+        } else {
+          this.docs = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
+          this.docsError = ''
+        }
+      } catch (_) {
+        this.selectedOrderPartner = null
+        this.selectedOrderPatient = null
+        this.lastDetailsOrderId = null
+      }
+    },
     productionStageIndex(state) {
       const s = (state || '').toLowerCase()
       // New 4-step model:
@@ -405,12 +558,69 @@ export default {
       } catch (error) {
         console.error('Error cancelling order:', error)
       }
+    },
+    async fetchOrderPatientDocs(partnerId, partnerName) {
+      try {
+        this.docsLoading = true
+        this.docsError = ''
+        const token = localStorage.getItem('decilo_token')
+        if (!token) throw new Error('Authentication required')
+        // Prefer order-based API which follows x_studio_patient on the order
+        const url = `/decilo-api/orders/${this.selectedOrder.id}/ear-impressions`
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          this.docsError = body?.error || `The ear document associated with the following patient: ${partnerName || ''} could not be found`
+          this.docs = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
+          return
+        }
+        this.docs = body
+      } catch (e) {
+        this.docsError = `The ear document associated with the following patient: ${partnerName || ''} could not be found`
+        this.docs = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
+      } finally {
+        this.docsLoading = false
+      }
+    },
+    async downloadDoc(side) {
+      if (!this.selectedOrderPatient?.id) return
+      try {
+        const token = localStorage.getItem('decilo_token')
+        if (!token) throw new Error('Authentication required')
+        const params = new URLSearchParams({ side })
+        const url = `/decilo-api/orders/${this.selectedOrder.id}/ear-impressions/download?${params.toString()}`
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+        if (!res.ok) return
+        const blob = await res.blob()
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = side === 'left' ? (this.docs.left?.filename || 'left_ear_impression') : (this.docs.right?.filename || 'right_ear_impression')
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      } catch (_) {
+        // ignore
+      }
     }
   }
 }
 </script>
 
 <style scoped>
+.patient-notes-box {
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.patient-notes-text {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
 .orders-container {
   padding: 32px;
   color: #e2e8f0;
@@ -424,6 +634,58 @@ export default {
   margin-bottom: 12px;
   position: relative;
   z-index: 1;
+}
+
+/* Preview sections */
+.preview-sections {
+  display: grid;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.preview-section {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.section-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid #334155;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.section-body {
+  padding: 12px 14px;
+}
+
+.section-empty {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.patient-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.info-label {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.info-value {
+  color: #94a3b8;
+  font-weight: 500;
+  font-size: 13px;
 }
 
 .header-content {
@@ -922,6 +1184,11 @@ export default {
   letter-spacing: 0.05em;
 }
 
+.order-patient-inline {
+  margin-top: 6px;
+  margin-left: 8px;
+}
+
 .order-details {
   padding: 0;
 }
@@ -1150,6 +1417,123 @@ export default {
   max-width: 400px;
   margin-left: auto;
   margin-right: auto;
+}
+
+.patient-docs {
+  margin-top: 32px;
+  padding-top: 32px;
+  border-top: 1px solid #334155;
+}
+
+.patient-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.patient-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(59, 130, 246, 0.1);
+  padding: 6px 12px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.existing-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.existing-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+
+.existing-docs-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.existing-docs-list li:hover {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: #475569;
+}
+
+.doc-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.doc-link:hover {
+  color: var(--primary-color);
+  transform: translateX(4px);
+}
+
+.doc-icon {
+  width: 20px;
+  height: 20px;
+  color: #64748b;
+}
+
+.doc-filename {
+  font-size: 14px;
+  font-weight: 500;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-grow: 1;
+}
+
+.dropdown-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 14px;
+  padding: 12px 16px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+.loading-spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #64748b;
+  border-top-color: #94a3b8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.patient-validation-error {
+  color: #f56565;
+  font-size: 14px;
+  margin-top: 12px;
+  text-align: center;
 }
 
 @media (max-width: 1024px) {

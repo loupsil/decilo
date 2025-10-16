@@ -785,7 +785,7 @@ def get_customer_orders(current_user):
             return jsonify({'orders': [], 'total': 0, 'offset': offset})
 
         # Read orders basic fields
-        order_fields = ['name', 'date_order', 'state', 'amount_total', 'amount_tax', 'amount_untaxed', 'order_line', 'partner_shipping_id']
+        order_fields = ['name', 'date_order', 'state', 'amount_total', 'amount_tax', 'amount_untaxed', 'order_line', 'partner_shipping_id', 'x_studio_patient']
         orders = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'sale.order', 'read',
@@ -840,7 +840,7 @@ def get_customer_orders(current_user):
         # Read shipping partners
         partners_by_id = {}
         if shipping_partner_ids:
-            partner_fields = ['street', 'city', 'zip', 'country_id']
+            partner_fields = ['name', 'street', 'city', 'zip', 'country_id']
             partner_records = models.execute_kw(
                 ODOO_DB, uid, ODOO_API_KEY,
                 'res.partner', 'read',
@@ -861,6 +861,7 @@ def get_customer_orders(current_user):
         response_orders = []
         for o in orders:
             shipping = None
+            patient = None
             if o.get('partner_shipping_id'):
                 sp_id = o['partner_shipping_id'][0]
                 p = partners_by_id.get(sp_id)
@@ -895,6 +896,14 @@ def get_customer_orders(current_user):
                 ):
                     continue
 
+            # Build patient object from x_studio_patient m2o if present
+            if o.get('x_studio_patient'):
+                xp = o['x_studio_patient']
+                if isinstance(xp, (list, tuple)) and len(xp) >= 2:
+                    patient = {'id': xp[0], 'name': xp[1]}
+                elif isinstance(xp, int):
+                    patient = {'id': xp, 'name': None}
+
             response_orders.append({
                 'id': o['id'],
                 'number': o.get('name'),
@@ -908,7 +917,8 @@ def get_customer_orders(current_user):
                 'total': o.get('amount_total'),
                 'paymentMethod': None,
                 'shippingMethod': None,
-                'shippingAddress': shipping
+                'shippingAddress': shipping,
+                'patient': patient
             })
 
         # Ensure date descending in case of later filtering
@@ -932,7 +942,7 @@ def get_order_details(current_user, order_id):
         models = get_odoo_models()
 
         # Read the order and verify it belongs to the current partner
-        order_fields = ['name', 'date_order', 'state', 'partner_id', 'order_line', 'amount_total', 'amount_tax', 'amount_untaxed']
+        order_fields = ['name', 'date_order', 'state', 'partner_id', 'x_studio_patient', 'order_line', 'amount_total', 'amount_tax', 'amount_untaxed']
         orders = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'sale.order', 'read',
@@ -1023,6 +1033,32 @@ def get_order_details(current_user, order_id):
                 return 'Cancelled'
             return 'Processing'
 
+        # Build response with partner data
+        partner = None
+        patient = None
+        patient_comment = None
+        if order.get('partner_id'):
+            pid = order['partner_id'][0]
+            pname = order['partner_id'][1] if isinstance(order['partner_id'], (list, tuple)) and len(order['partner_id']) > 1 else None
+            partner = {'id': pid, 'name': pname}
+        if order.get('x_studio_patient'):
+            p2 = order['x_studio_patient']
+            pat_id = p2[0] if isinstance(p2, (list, tuple)) else p2
+            pat_name = p2[1] if isinstance(p2, (list, tuple)) and len(p2) > 1 else None
+            patient = {'id': pat_id, 'name': pat_name}
+            # Read internal notes/comment from patient contact
+            try:
+                p_rec = models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner', 'read',
+                    [pat_id],
+                    {'fields': ['comment']}
+                )
+                if p_rec:
+                    patient_comment = (p_rec[0].get('comment') or '').strip() or None
+            except Exception:
+                patient_comment = None
+
         response = {
             'id': order['id'],
             'number': order.get('name'),
@@ -1031,7 +1067,10 @@ def get_order_details(current_user, order_id):
             'subtotal': order.get('amount_untaxed'),
             'tax': order.get('amount_tax'),
             'total': order.get('amount_total'),
-            'lines': detailed_lines
+            'lines': detailed_lines,
+            'partner': partner,
+            'patient': patient,
+            'patient_comment': patient_comment
         }
 
         return jsonify(response)
@@ -1157,6 +1196,139 @@ def download_patient_ear_impression(current_user):
         logger.error(error_msg, exc_info=True)
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
+
+@decilo_bp.route('/decilo-api/orders/<int:order_id>/ear-impressions', methods=['GET'])
+@token_required
+def get_order_ear_impressions(current_user, order_id: int):
+    """Return ear impression availability/filenames for the order's linked patient (x_studio_patient)."""
+    logger.info(f"Received request for /decilo-api/orders/{order_id}/ear-impressions")
+    try:
+        uid = get_uid()
+        models = get_odoo_models()
+
+        # Read order with patient link
+        order_fields = ['x_studio_patient']
+        orders = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'sale.order', 'read',
+            [order_id],
+            {'fields': order_fields}
+        )
+        if not orders:
+            return jsonify({'error': 'Order not found'}), 404
+        order = orders[0]
+
+        patient_m2o = order.get('x_studio_patient')
+        if not patient_m2o:
+            return jsonify({'patient': None, 'left': {'exists': False}, 'right': {'exists': False}})
+
+        patient_id = patient_m2o[0] if isinstance(patient_m2o, (list, tuple)) else patient_m2o
+
+        # Reuse logic by reading partner fields directly
+        fields = ['name', 'x_studio_left_ear_impression', 'x_studio_right_ear_impression']
+        try:
+            available = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'res.partner', 'fields_get',
+                [['x_studio_left_ear_impression_filename', 'x_studio_right_ear_impression_filename']]
+            ) or {}
+            if 'x_studio_left_ear_impression_filename' in available:
+                fields.append('x_studio_left_ear_impression_filename')
+            if 'x_studio_right_ear_impression_filename' in available:
+                fields.append('x_studio_right_ear_impression_filename')
+        except Exception:
+            pass
+
+        recs = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'res.partner', 'read',
+            [patient_id],
+            {'fields': fields}
+        )
+        if not recs:
+            return jsonify({'error': 'Patient not found'}), 404
+
+        rec = recs[0]
+        left_exists = bool(rec.get('x_studio_left_ear_impression'))
+        right_exists = bool(rec.get('x_studio_right_ear_impression'))
+        left_filename = rec.get('x_studio_left_ear_impression_filename') or ('left_ear_impression' if left_exists else None)
+        right_filename = rec.get('x_studio_right_ear_impression_filename') or ('right_ear_impression' if right_exists else None)
+
+        return jsonify({
+            'patient': {'id': patient_id, 'name': rec.get('name')},
+            'left': {'exists': left_exists, 'filename': left_filename},
+            'right': {'exists': right_exists, 'filename': right_filename}
+        })
+    except Exception as e:
+        error_msg = f"Error fetching order ear impressions: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
+
+@decilo_bp.route('/decilo-api/orders/<int:order_id>/ear-impressions/download', methods=['GET'])
+@token_required
+def download_order_ear_impression(current_user, order_id: int):
+    """Download left or right ear impression by following sale.order -> x_studio_patient."""
+    try:
+        side = (request.args.get('side') or '').lower()
+        if side not in ['left', 'right']:
+            return jsonify({'error': 'side (left|right) is required'}), 400
+
+        uid = get_uid()
+        models = get_odoo_models()
+
+        # Get patient from order
+        order_fields = ['x_studio_patient']
+        orders = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'sale.order', 'read',
+            [order_id],
+            {'fields': order_fields}
+        )
+        if not orders or not orders[0].get('x_studio_patient'):
+            return jsonify({'error': 'Patient not linked to order'}), 404
+        patient_id = orders[0]['x_studio_patient'][0]
+
+        # Read patient binary
+        bin_field = f"x_studio_{side}_ear_impression"
+        name_field = f"x_studio_{side}_ear_impression_filename"
+        fields = ['name', bin_field]
+        try:
+            available = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'res.partner', 'fields_get',
+                [[name_field]]
+            ) or {}
+            if name_field in available:
+                fields.append(name_field)
+        except Exception:
+            pass
+
+        recs = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'res.partner', 'read',
+            [patient_id],
+            {'fields': fields}
+        )
+        if not recs:
+            return jsonify({'error': 'Patient not found'}), 404
+        rec = recs[0]
+        b64data = rec.get(bin_field)
+        if not b64data:
+            return jsonify({'error': 'File not found'}), 404
+
+        file_bytes = base64.b64decode(b64data)
+        filename = rec.get(name_field) or f"{side}_ear_impression.bin"
+        headers = {
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+        return Response(file_bytes, headers=headers)
+    except Exception as e:
+        error_msg = f"Error downloading order ear impression: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+        
 @decilo_bp.route('/decilo-api/orders', methods=['POST'])
 @token_required
 def create_order(current_user):
@@ -1352,6 +1524,9 @@ def create_order(current_user):
                 'product_uom_qty': 1,
             })]
         }
+        # If we have a patient contact in Odoo, link it to the order's Studio field
+        if patient_info and patient_info.get('id'):
+            order_vals['x_studio_patient'] = patient_info['id']
 
         order_id = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
@@ -1422,6 +1597,30 @@ def create_order(current_user):
                 'subtype_xmlid': 'mail.mt_note',
                 }
             )
+
+        # If notes provided, persist them in the patient's Internal Notes field (technical: comment)
+        if patient_info and patient_info.get('id') and notes:
+            try:
+                # Read existing comment to append rather than overwrite blindly
+                existing = models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner', 'read',
+                    [patient_info['id']],
+                    {'fields': ['comment']}
+                )
+                previous_comment = ''
+                if existing and isinstance(existing, list):
+                    previous_comment = existing[0].get('comment') or ''
+
+                new_comment = f"{previous_comment}\n\n{notes}" if previous_comment else notes
+
+                models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner', 'write',
+                    [[patient_info['id']], {'comment': new_comment}]
+                )
+            except Exception as e:
+                logger.warning(f"Failed to write patient internal comment: {str(e)}")
 
         # Attach uploaded documents to the order and prepare patient binary field updates
         attachment_ids = []

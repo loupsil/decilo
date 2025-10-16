@@ -342,7 +342,7 @@
             <template v-if="isImpressionScan3D && !isSendingImpressions">
               <div class="form-group" v-if="showRightUpload">
                 <label for="rightImpressionDoc">Right Ear Impression<span v-if="requireRightDoc"> *</span></label>
-                <div class="file-upload">
+                <div class="file-upload right-upload" :class="{ 'has-file': !!orderForm.rightImpressionDoc }">
                   <input
                     id="rightImpressionDoc"
                     type="file"
@@ -357,7 +357,7 @@
 
               <div class="form-group" v-if="showLeftUpload">
                 <label for="leftImpressionDoc">Left Ear Impression<span v-if="requireLeftDoc"> *</span></label>
-                <div class="file-upload">
+                <div class="file-upload left-upload" :class="{ 'has-file': !!orderForm.leftImpressionDoc }">
                   <input
                     id="leftImpressionDoc"
                     type="file"
@@ -1336,6 +1336,34 @@ export default {
   font-size: 13px;
 }
 
+/* Left/Right upload color accents */
+.file-upload.left-upload {
+  /* keep container neutral so the frame doesn't wrap the green filename badge */
+  background: transparent;
+  border-color: transparent;
+}
+.file-upload.left-upload.has-file {
+}
+.file-upload.right-upload {
+  /* keep container neutral so the frame doesn't wrap the green filename badge */
+  background: transparent;
+  border-color: transparent;
+}
+.file-upload.right-upload.has-file {
+}
+
+/* Ensure background/border apply to the input itself for perfect alignment */
+.file-upload.left-upload input[type="file"] {
+  background: linear-gradient(0deg, rgba(59,130,246,0.10), rgba(59,130,246,0.06));
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.file-upload.right-upload input[type="file"] {
+  background: linear-gradient(0deg, rgba(239,68,68,0.10), rgba(239,68,68,0.06));
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+
 /* Patient Selection Container */
 .patient-selection-container {
   display: flex;
@@ -1641,10 +1669,12 @@ export default {
 /* File Upload Styles */
 .file-upload {
   position: relative;
+  width: 80%;
 }
 
 .file-upload input[type="file"] {
-  width: 80%;
+  width: 100%;
+  box-sizing: border-box;
   padding: 16px 20px;
   background: var(--secondary-color);
   border: 2px solid #334155;
@@ -1670,6 +1700,7 @@ export default {
   background: rgba(16, 185, 129, 0.1);
   border-radius: 8px;
   border: 1px solid rgba(16, 185, 129, 0.3);
+  width: fit-content;
 }
 
 /* Confirmation Styles */
