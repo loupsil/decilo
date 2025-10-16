@@ -1533,6 +1533,13 @@ def create_order(current_user):
             'sale.order', 'create', [order_vals]
         )
 
+        # Automatically confirm the sale order
+        models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'sale.order', 'action_confirm',
+            [order_id]
+        )
+
         # Post chatter message with additional info (formatted HTML)
         # Read variant display name for clarity
         variant_display = None
