@@ -16,12 +16,12 @@
         <div class="progress-line" :class="{ active: orderStep > 0 }"></div>
         <div class="progress-step" :class="{ active: orderStep >= 1, completed: orderStep > 1 }">
           <div class="step-number">2</div>
-          <span>Details</span>
+          <span>Patient</span>
         </div>
         <div class="progress-line" :class="{ active: orderStep > 1 }"></div>
         <div class="progress-step" :class="{ active: orderStep >= 2, completed: orderStep > 2 }">
           <div class="step-number">3</div>
-          <span>Documents</span>
+          <span>Ear Impressions</span>
         </div>
         <div class="progress-line" :class="{ active: orderStep > 2 }"></div>
         <div class="progress-step" :class="{ active: orderStep >= 3, completed: orderStep > 3 }">
@@ -44,7 +44,7 @@
           <div v-if="orderStep === 0" class="order-step">
             <h2>{{ selectedProduct.name }}</h2>
             <p class="full-description">{{ selectedProduct.full_description }}</p>
-            <div class="specifications">
+            <div v-if="selectedProduct.specifications && selectedProduct.specifications.length > 0" class="specifications">
               <h3>Specifications</h3>
               <ul>
                 <li v-for="(spec, index) in selectedProduct.specifications" :key="index">
@@ -100,7 +100,7 @@
                     </svg>
                   </div>
                   <div class="client-type-content">
-                    <h4>New Client</h4>
+                    <h4>New Patient</h4>
                     <p>Create a new patient profile</p>
                   </div>
                 </button>
@@ -119,7 +119,7 @@
                     </svg>
                   </div>
                   <div class="client-type-content">
-                    <h4>Existing Client</h4>
+                    <h4>Existing Patient</h4>
                     <p>Select from existing patients</p>
                   </div>
                 </button>
@@ -278,18 +278,85 @@
 
           <!-- Step 3: Document Upload -->
           <div v-if="orderStep === 2" class="order-step">
-            <h2>Document Upload</h2>
+            <h2>Ear Impressions</h2>
 
-            <!-- Always show the sending-impressions note when selected -->
-            <div v-if="isSendingImpressions" class="form-group">
-              <div class="highlight-note">
-                <span class="highlight-icon">📦</span>
-                <span class="highlight-text"><strong>Merci d’envoyer les empreintes en indiquant le numéro ID MO</strong></span>
+            <!-- Impression Method Selection (only for new patients, if not selected yet) -->
+            <div v-if="!isImpressionMethodSelected && clientType !== 'existing'" class="impression-method-selection">
+              <h3>How would you like to provide the ear impressions?</h3>
+              <div class="impression-method-buttons">
+                <button
+                  class="impression-method-btn"
+                  :class="{ active: impressionMethod === 'scan' }"
+                  @click="selectImpressionMethod('scan')"
+                >
+                  <div class="impression-method-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                  </div>
+                  <div class="impression-method-content">
+                    <h4>Scan of ear impressions</h4>
+                    <p>Upload scan of impressions</p>
+                  </div>
+                </button>
+
+                <button
+                  class="impression-method-btn"
+                  :class="{ active: impressionMethod === 'ship' }"
+                  @click="selectImpressionMethod('ship')"
+                >
+                  <div class="impression-method-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                    </svg>
+                  </div>
+                  <div class="impression-method-content">
+                    <h4>Shipping of ear impressions</h4>
+                    <p>Ship your ear impressions</p>
+                  </div>
+                </button>
               </div>
             </div>
 
-            <!-- With previous order: show previously stored documents (downloadable) -->
-            <div v-if="isWithPreviousOrder" class="form-group">
+            <!-- Content when impression method is selected OR existing patient (auto-scan) -->
+            <div v-else-if="isImpressionMethodSelected || clientType === 'existing'">
+              <!-- Method header with option to change (only for new patients) -->
+              <div v-if="clientType !== 'existing'" class="impression-method-header">
+                <h3>{{ impressionMethod === 'scan' ? 'Scan of ear impressions' : 'Shipping of ear impressions' }}</h3>
+                <button class="change-impression-method-btn" @click="changeImpressionMethod">
+                  Change Method
+                </button>
+              </div>
+
+              <!-- Shipping method: show message (only for new patients who chose shipping) -->
+              <div v-if="impressionMethod === 'ship'" class="form-group">
+                <div class="highlight-note">
+                  <span class="highlight-icon">📦</span>
+                  <span class="highlight-text"><strong>Merci d'envoyer les empreintes en indiquant le numéro ID MO</strong></span>
+                </div>
+              </div>
+
+              <!-- Scan method: show upload options (default for existing patients, or when scan is selected for new patients) -->
+              <div v-else-if="impressionMethod === 'scan' || clientType === 'existing'">
+                
+                <!-- Document status message for existing patients -->
+                <div v-if="clientType === 'existing' && !earImpressionsLoading" class="form-group">
+                  <div v-if="earImpressionsError" class="info-note error">
+                    <span class="info-icon">⚠️</span>
+                    <span class="info-text">{{ earImpressionsError }}</span>
+                  </div>
+                  <div v-else-if="earImpressions.left?.exists || earImpressions.right?.exists" class="info-note success">
+                    <span class="info-icon">✓</span>
+                    <span class="info-text"><strong>Documents found for {{ selectedPatient?.name }}</strong> - They have been automatically loaded. You can replace them if needed.</span>
+                  </div>
+                  <div v-else class="info-note warning">
+                    <span class="info-icon">ℹ️</span>
+                    <span class="info-text"><strong>No existing documents found for {{ selectedPatient?.name }}</strong> - Please upload new ear impression documents.</span>
+                  </div>
+                </div>
+
+                <!-- With previous order: show previously stored documents (downloadable) -->
+                <div v-if="isWithPreviousOrder" class="form-group">
               <h3 style="margin-top: 16px;">Existing Ear Impression Documents</h3>
               <div v-if="earImpressionsLoading" class="dropdown-loading">
                 <div class="loading-spinner-small"></div>
@@ -338,41 +405,77 @@
               </div>
             </div>
 
-            <!-- Conditionally render impression uploads only when 3D scan is selected and not sending impressions -->
-            <template v-if="isImpressionScan3D && !isSendingImpressions">
-              <div class="form-group" v-if="showRightUpload">
-                <label for="rightImpressionDoc">Right Ear Impression<span v-if="requireRightDoc"> *</span></label>
-                <div class="file-upload right-upload" :class="{ 'has-file': !!orderForm.rightImpressionDoc }">
-                  <input
-                    id="rightImpressionDoc"
-                    type="file"
-                    @change="handleFileUpload('right', $event)"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                  >
-                  <div class="upload-status" v-if="orderForm.rightImpressionDoc">
-                    {{ orderForm.rightImpressionDoc.name }}
-                  </div>
+                <!-- Conditionally render impression uploads only when 3D scan is selected -->
+                <div v-if="isImpressionScan3D" class="ear-upload-container">
+              <div 
+                v-if="showLeftUpload" 
+                class="ear-upload-box left-ear" 
+                :class="{ 'has-file': !!orderForm.leftImpressionDoc, 'dragging': isDraggingLeft }"
+                @click="triggerFileInput('left')"
+                @dragover.prevent="isDraggingLeft = true"
+                @dragleave.prevent="isDraggingLeft = false"
+                @drop.prevent="handleDrop('left', $event)"
+              >
+                <div class="ear-illustration left">
+                  <svg viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M70 30C70 20 65 10 50 10C35 10 30 20 30 30C30 35 28 40 28 45C28 50 30 55 32 60C34 65 36 70 36 75C36 85 34 95 40 100C46 105 55 105 60 100C65 95 68 85 68 75C68 70 70 65 72 60C74 55 76 50 76 45C76 40 74 35 70 30Z" stroke="currentColor" stroke-width="3" fill="none"/>
+                    <ellipse cx="45" cy="50" rx="8" ry="12" stroke="currentColor" stroke-width="2" fill="none"/>
+                  </svg>
                 </div>
-              </div>
-
-              <div class="form-group" v-if="showLeftUpload">
-                <label for="leftImpressionDoc">Left Ear Impression<span v-if="requireLeftDoc"> *</span></label>
-                <div class="file-upload left-upload" :class="{ 'has-file': !!orderForm.leftImpressionDoc }">
+                <div class="ear-upload-content">
+                  <h4>Left Ear<span v-if="requireLeftDoc" class="required-mark"> *</span></h4>
+                  <div class="upload-info">
+                    <span v-if="!orderForm.leftImpressionDoc" class="upload-prompt">Click or drag file here</span>
+                    <span v-else class="uploaded-filename">{{ orderForm.leftImpressionDoc.name }}</span>
+                  </div>
                   <input
+                    ref="leftFileInput"
                     id="leftImpressionDoc"
                     type="file"
                     @change="handleFileUpload('left', $event)"
                     accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    class="hidden-file-input"
                   >
-                  <div class="upload-status" v-if="orderForm.leftImpressionDoc">
-                    {{ orderForm.leftImpressionDoc.name }}
-                  </div>
                 </div>
               </div>
-            </template>
 
-            <!-- Additional Notes -->
-            <div class="form-group">
+              <div 
+                v-if="showRightUpload" 
+                class="ear-upload-box right-ear" 
+                :class="{ 'has-file': !!orderForm.rightImpressionDoc, 'dragging': isDraggingRight }"
+                @click="triggerFileInput('right')"
+                @dragover.prevent="isDraggingRight = true"
+                @dragleave.prevent="isDraggingRight = false"
+                @drop.prevent="handleDrop('right', $event)"
+              >
+                <div class="ear-illustration right">
+                  <svg viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M30 30C30 20 35 10 50 10C65 10 70 20 70 30C70 35 72 40 72 45C72 50 70 55 68 60C66 65 64 70 64 75C64 85 66 95 60 100C54 105 45 105 40 100C35 95 32 85 32 75C32 70 30 65 28 60C26 55 24 50 24 45C24 40 26 35 30 30Z" stroke="currentColor" stroke-width="3" fill="none"/>
+                    <ellipse cx="55" cy="50" rx="8" ry="12" stroke="currentColor" stroke-width="2" fill="none"/>
+                  </svg>
+                </div>
+                <div class="ear-upload-content">
+                  <h4>Right Ear<span v-if="requireRightDoc" class="required-mark"> *</span></h4>
+                  <div class="upload-info">
+                    <span v-if="!orderForm.rightImpressionDoc" class="upload-prompt">Click or drag file here</span>
+                    <span v-else class="uploaded-filename">{{ orderForm.rightImpressionDoc.name }}</span>
+                  </div>
+                  <input
+                    ref="rightFileInput"
+                    id="rightImpressionDoc"
+                    type="file"
+                    @change="handleFileUpload('right', $event)"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    class="hidden-file-input"
+                  >
+                </div>
+              </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Additional Notes (shown when method is selected or for existing patients) -->
+            <div v-if="isImpressionMethodSelected || clientType === 'existing'" class="form-group">
               <label for="notes">Additional Notes</label>
               <textarea
                 id="notes"
@@ -426,6 +529,9 @@
               <p>Your order has been successfully placed!</p>
               <button class="view-orders-btn" @click="viewOrders">
                 See My Orders
+              </button>
+              <button class="back-to-products-btn" @click="backToProducts">
+                Place a new order
               </button>
             </div>
           </div>
@@ -496,6 +602,7 @@ export default {
     return {
       orderStep: 0, // 0: product, 1: additional info, 2: documents, 3: review, 4: confirmation
       clientType: null, // 'new' or 'existing' - null means not selected yet
+      impressionMethod: null, // 'scan' or 'ship' - null means not selected yet
       orderForm: {
         notes: '',
         patientFirstName: '',
@@ -513,6 +620,10 @@ export default {
       earImpressions: { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } },
       earImpressionsLoading: false,
       earImpressionsError: '',
+      isDraggingLeft: false,
+      isDraggingRight: false,
+      preloadedLeftDoc: null, // Pre-loaded document from existing patient
+      preloadedRightDoc: null, // Pre-loaded document from existing patient
     }
   },
   computed: {
@@ -522,6 +633,10 @@ export default {
 
     isClientTypeSelected() {
       return this.clientType !== null;
+    },
+
+    isImpressionMethodSelected() {
+      return this.impressionMethod !== null;
     },
 
     isPatientInfoValid() {
@@ -549,7 +664,7 @@ export default {
     // Whether the Step 1 options include "With previous order" (force existing client flow)
     isWithPreviousOrder() {
       const values = Object.values(this.selectedVariants || {})
-      return values.includes('With previous order')
+      return values.includes('From previous order')
     },
 
     // Resolve the selected Sides value from variants. Prefer attribute key 'Sides',
@@ -600,9 +715,15 @@ export default {
       deep: true
     },
     orderStep(newVal) {
-      // Load previous-order documents when entering Documents step
-      if (newVal === 2 && this.isWithPreviousOrder && this.selectedPatient) {
-        this.fetchEarImpressions()
+      // Load previous-order documents when entering Documents step with existing patient
+      if (newVal === 2 && this.selectedPatient && this.clientType === 'existing') {
+        this.fetchAndPreloadPatientDocs()
+      }
+    },
+    impressionMethod(newVal) {
+      // When user selects 'scan' method and has an existing patient, pre-load their documents
+      if (newVal === 'scan' && this.selectedPatient && this.clientType === 'existing') {
+        this.fetchAndPreloadPatientDocs()
       }
     }
   },
@@ -631,6 +752,15 @@ export default {
           this.orderForm.patientFirstName = ''
           this.orderForm.patientLastName = ''
           this.patientValidationError = ''
+        }
+
+        // If we returned to Patient step, clear impression method and preloaded docs
+        if (this.orderStep === 1) {
+          this.impressionMethod = null
+          this.orderForm.rightImpressionDoc = null
+          this.orderForm.leftImpressionDoc = null
+          this.preloadedLeftDoc = null
+          this.preloadedRightDoc = null
         }
       }
     },
@@ -672,12 +802,21 @@ export default {
         // Do not skip the Documents step anymore when sending impressions; show a note in Step 3 instead
       }
 
-      // Validate documents when moving from Step 2 (Documents) to Step 3 (Review)
+      // Validate impression method selection when moving from Step 2 (Documents) to Step 3 (Review)
       if (this.orderStep === 2) {
-        const docError = this.validateDocuments()
-        if (docError) {
-          this.$emit('show-error', { message: docError, type: 'error' })
+        // For new patients, validate that they selected a method
+        if (this.clientType !== 'existing' && !this.isImpressionMethodSelected) {
+          this.$emit('show-error', { message: 'Please select how you would like to provide the ear impressions.', type: 'error' })
           return
+        }
+
+        // Validate documents if scan method is selected OR if it's an existing patient (auto-scan)
+        if (this.impressionMethod === 'scan' || this.clientType === 'existing') {
+          const docError = this.validateDocuments()
+          if (docError) {
+            this.$emit('show-error', { message: docError, type: 'error' })
+            return
+          }
         }
       }
 
@@ -790,14 +929,49 @@ export default {
       }
     },
 
+    triggerFileInput(side) {
+      if (side === 'left') {
+        this.$refs.leftFileInput.click();
+      } else {
+        this.$refs.rightFileInput.click();
+      }
+    },
+
+    handleDrop(side, event) {
+      if (side === 'left') {
+        this.isDraggingLeft = false;
+      } else {
+        this.isDraggingRight = false;
+      }
+      
+      const files = event.dataTransfer.files;
+      if (files.length > 0) {
+        const file = files[0];
+        // Check file type
+        const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
+        if (allowedTypes.includes(file.type) || file.name.match(/\.(pdf|doc|docx|jpg|jpeg|png)$/i)) {
+          if (side === 'right') {
+            this.orderForm.rightImpressionDoc = file;
+          } else {
+            this.orderForm.leftImpressionDoc = file;
+          }
+        }
+      }
+    },
+
     viewOrders() {
       this.$emit('go-to-orders');
+      this.closeModal();
+    },
+
+    backToProducts() {
       this.closeModal();
     },
 
     resetOrderForm() {
       this.orderStep = 0;
       this.clientType = null;
+      this.impressionMethod = null;
       this.orderForm = {
         notes: '',
         patientFirstName: '',
@@ -806,6 +980,8 @@ export default {
         rightImpressionDoc: null,
         leftImpressionDoc: null
       };
+      this.preloadedLeftDoc = null;
+      this.preloadedRightDoc = null;
     },
 
     closeModal() {
@@ -899,6 +1075,19 @@ export default {
       this.orderForm.patientFirstName = '';
       this.orderForm.patientLastName = '';
       this.selectedPatient = null;
+    },
+
+    selectImpressionMethod(method) {
+      this.impressionMethod = method;
+    },
+
+    changeImpressionMethod() {
+      this.impressionMethod = null;
+      // Reset uploaded documents when changing method
+      this.orderForm.rightImpressionDoc = null;
+      this.orderForm.leftImpressionDoc = null;
+      this.preloadedLeftDoc = null;
+      this.preloadedRightDoc = null;
     },
 
     toggleDropdown() {
@@ -1014,6 +1203,68 @@ export default {
         a.remove()
       } catch (_) {
         // swallow
+      }
+    },
+
+    async fetchAndPreloadPatientDocs() {
+      try {
+        this.earImpressionsLoading = true
+        this.earImpressionsError = ''
+        const token = localStorage.getItem('decilo_token')
+        if (!token) throw new Error('Authentication required')
+        
+        const url = `/decilo-api/patient-ear-impressions?patient_id=${encodeURIComponent(this.selectedPatient.id)}`
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+        const body = await res.json().catch(() => ({}))
+        
+        if (!res.ok) {
+          this.earImpressionsError = body?.error || 'Could not load patient documents'
+          this.earImpressions = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
+          return
+        }
+        
+        this.earImpressions = body
+        
+        // Pre-load the documents into the upload fields
+        if (body.left?.exists && body.left?.filename) {
+          await this.preloadDocument('left', body.left.filename)
+        }
+        if (body.right?.exists && body.right?.filename) {
+          await this.preloadDocument('right', body.right.filename)
+        }
+      } catch (e) {
+        this.earImpressionsError = 'Could not load patient documents'
+        this.earImpressions = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
+      } finally {
+        this.earImpressionsLoading = false
+      }
+    },
+
+    async preloadDocument(side, filename) {
+      try {
+        const token = localStorage.getItem('decilo_token')
+        if (!token) return
+        
+        const params = new URLSearchParams({ patient_id: String(this.selectedPatient.id), side })
+        const url = `/decilo-api/patient-ear-impressions/download?${params.toString()}`
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+        
+        if (!res.ok) return
+        
+        const blob = await res.blob()
+        // Create a File object from the blob with the original filename
+        const file = new File([blob], filename, { type: blob.type })
+        
+        // Assign to the appropriate form field and preloaded property
+        if (side === 'left') {
+          this.preloadedLeftDoc = file
+          this.orderForm.leftImpressionDoc = file
+        } else {
+          this.preloadedRightDoc = file
+          this.orderForm.rightImpressionDoc = file
+        }
+      } catch (e) {
+        console.error(`Failed to preload ${side} document:`, e)
       }
     },
   }
@@ -1171,9 +1422,10 @@ export default {
 }
 
 .progress-step.active .step-number {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+  border-color: #ffffff;
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
   transform: scale(1.1);
 }
 
@@ -1195,7 +1447,7 @@ export default {
   left: 0;
   height: 100%;
   width: 0%;
-  background: var(--primary-color);
+  background: #ffffff;
   transition: width 0.5s ease;
   border-radius: 2px;
 }
@@ -1292,6 +1544,48 @@ export default {
   line-height: 1.4;
 }
 
+/* Info notes for document status */
+.info-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.info-note.success {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #d1fae5;
+}
+
+.info-note.warning {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fde68a;
+}
+
+.info-note.error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fecaca;
+}
+
+.info-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.info-text {
+  line-height: 1.5;
+  flex: 1;
+}
+
 /* Existing documents minimalist links */
 .existing-docs-list {
   list-style: none;
@@ -1336,31 +1630,135 @@ export default {
   font-size: 13px;
 }
 
-/* Left/Right upload color accents */
-.file-upload.left-upload {
-  /* keep container neutral so the frame doesn't wrap the green filename badge */
-  background: transparent;
-  border-color: transparent;
-}
-.file-upload.left-upload.has-file {
-}
-.file-upload.right-upload {
-  /* keep container neutral so the frame doesn't wrap the green filename badge */
-  background: transparent;
-  border-color: transparent;
-}
-.file-upload.right-upload.has-file {
+/* Ear Upload Container */
+.ear-upload-container {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 24px;
+  margin-bottom: 24px;
 }
 
-/* Ensure background/border apply to the input itself for perfect alignment */
-.file-upload.left-upload input[type="file"] {
-  background: linear-gradient(0deg, rgba(59,130,246,0.10), rgba(59,130,246,0.06));
-  border-color: rgba(59, 130, 246, 0.45);
+.ear-upload-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 20px;
+  border: 3px solid;
+  border-radius: 16px;
+  background: var(--secondary-color);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  min-height: 280px;
+  width: 220px;
+  max-width: 220px;
+  justify-content: center;
 }
 
-.file-upload.right-upload input[type="file"] {
-  background: linear-gradient(0deg, rgba(239,68,68,0.10), rgba(239,68,68,0.06));
-  border-color: rgba(239, 68, 68, 0.45);
+.ear-upload-box.left-ear {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(59, 130, 246, 0.02));
+}
+
+.ear-upload-box.right-ear {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(239, 68, 68, 0.02));
+}
+
+.ear-upload-box.left-ear:hover {
+  border-color: rgba(59, 130, 246, 0.8);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.04));
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.2);
+}
+
+.ear-upload-box.right-ear:hover {
+  border-color: rgba(239, 68, 68, 0.8);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(239, 68, 68, 0.04));
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2);
+}
+
+.ear-upload-box.has-file.left-ear {
+  border-color: rgba(59, 130, 246, 1);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.06));
+}
+
+.ear-upload-box.has-file.right-ear {
+  border-color: rgba(239, 68, 68, 1);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.06));
+}
+
+.ear-upload-box.dragging.left-ear {
+  border-color: rgba(59, 130, 246, 1);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.08));
+  transform: scale(1.02);
+}
+
+.ear-upload-box.dragging.right-ear {
+  border-color: rgba(239, 68, 68, 1);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
+  transform: scale(1.02);
+}
+
+.ear-illustration {
+  width: 100px;
+  height: 150px;
+  margin-bottom: 24px;
+  transform: scaleX(-1);
+}
+
+.ear-illustration.left {
+  color: rgba(59, 130, 246, 0.8);
+}
+
+.ear-illustration.right {
+  color: rgba(239, 68, 68, 0.8);
+}
+
+.ear-illustration svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ear-upload-content {
+  text-align: center;
+  width: 100%;
+}
+
+.ear-upload-content h4 {
+  color: #ffffff;
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.required-mark {
+  color: #ef4444;
+  margin-left: 4px;
+}
+
+.upload-info {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.upload-prompt {
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 500;
+  display: block;
+}
+
+.uploaded-filename {
+  color: #10b981;
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 
@@ -1400,8 +1798,9 @@ export default {
 }
 
 .dropdown-trigger.has-selection {
-  border-color: #10b981;
-  background: var(--primary-color);
+  border: 1px solid white;
+  color: white;
+  background: var(--secondary-color);
 }
 
 .dropdown-icon {
@@ -1709,6 +2108,12 @@ export default {
   padding: 60px 40px;
 }
 
+.confirmation-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .confirmation h2 {
   margin-bottom: 20px;
   color: #ffffff;
@@ -1718,7 +2123,7 @@ export default {
 
 .confirmation p {
   color: #10b981;
-  margin-bottom: 32px;
+  margin-bottom: 48px;
   font-size: 16px;
   font-weight: 500;
 }
@@ -1740,17 +2145,38 @@ export default {
 
 .view-orders-btn {
   padding: 12px 24px;
-  background: #333333;
+  background: #000000;
   color: #ffffff;
-  border: none;
-  border-radius: 6px;
+  border: 2px solid #ffffff;
+  border-radius: 12px;
   cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 24px;
 }
 
 .view-orders-btn:hover {
-  background: #444444;
+  background: #ffffff;
+  color: #000000;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
+}
+
+.back-to-products-btn {
+  padding: 12px 24px;
+  background: transparent;
+  color: #ffffff;
+  border: 2px solid #64748b;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.back-to-products-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #ffffff;
+  transform: translateY(-2px);
 }
 
 /* Navigation Buttons */
@@ -1763,9 +2189,9 @@ export default {
 
 .back-btn {
   padding: 16px 32px;
-  background: var(--secondary-color);
+  background: #000000;
   color: #ffffff;
-  border: 2px solid #64748b;
+  border: 2px solid #ffffff;
   border-radius: 16px;
   cursor: pointer;
   font-weight: 600;
@@ -1777,10 +2203,11 @@ export default {
 }
 
 .back-btn:hover:not(:disabled) {
-  background: var(--secondary-color);
-  border-color: #94a3b8;
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(100, 116, 139, 0.3);
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
 }
 
 .back-btn:disabled {
@@ -1812,15 +2239,16 @@ export default {
   font-weight: 600;
   min-width: 160px;
   border-radius: 16px;
-  background: var(--primary-color);
+  background: #000000;
   color: #ffffff;
-  border: none;
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+  border: 2px solid #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   position: relative;
   overflow: hidden;
+  backdrop-filter: blur(8px);
 }
 
 .order-btn.large::before {
@@ -1838,9 +2266,11 @@ export default {
 }
 
 .order-btn.large:hover {
-  background: var(--primary-color);
-  transform: translateY(-3px);
-  box-shadow: 0 12px 32px rgba(59, 130, 246, 0.4);
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
 }
 
 .order-btn.large:disabled {
@@ -2359,6 +2789,120 @@ export default {
 }
 
 .change-client-type-btn:hover {
+  border-color: #ffffff;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Impression Method Selection Styles */
+.impression-method-selection {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.impression-method-selection h3 {
+  color: #ffffff;
+  margin-bottom: 32px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.impression-method-buttons {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.impression-method-btn {
+  flex: 1;
+  max-width: 280px;
+  padding: 32px 24px;
+  background: var(--secondary-color);
+  border: 2px solid #334155;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.impression-method-btn:hover {
+  border-color: #475569;
+  background: var(--secondary-color);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.impression-method-btn.active {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.impression-method-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  color: #64748b;
+  transition: color 0.3s ease;
+}
+
+.impression-method-btn.active .impression-method-icon {
+  color: #ffffff;
+}
+
+.impression-method-content h4 {
+  color: #ffffff;
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.impression-method-content p {
+  color: #94a3b8;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.impression-method-btn.active .impression-method-content h4,
+.impression-method-btn.active .impression-method-content p {
+  color: #ffffff;
+}
+
+/* Impression Method Header */
+.impression-method-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.impression-method-header h3 {
+  color: #ffffff;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.change-impression-method-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #64748b;
+  border-radius: 8px;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.change-impression-method-btn:hover {
   border-color: #ffffff;
   color: #ffffff;
   background: rgba(255, 255, 255, 0.1);

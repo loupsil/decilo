@@ -64,17 +64,17 @@
           <div class="nav-tabs">
             <button 
               class="tab-btn" 
-              :class="{ active: activeTab === 'orders' }"
-              @click="activeTab = 'orders'"
-            >
-              Orders
-            </button>
-            <button 
-              class="tab-btn" 
               :class="{ active: activeTab === 'products' }"
               @click="activeTab = 'products'"
             >
               Products
+            </button>
+            <button 
+              class="tab-btn" 
+              :class="{ active: activeTab === 'orders' }"
+              @click="activeTab = 'orders'"
+            >
+              Orders
             </button>
           </div>
           <div class="profile-menu">
@@ -95,14 +95,14 @@
       </header>
 
       <main class="dashboard-content">
-        <div v-if="activeTab === 'orders'">
-          <decilo-orders :customer-info="customerInfo" @token-expired="handleTokenExpired" />
-        </div>
         <decilo-product-catalog
-          v-else-if="activeTab === 'products'"
+          v-if="activeTab === 'products'"
           @go-to-orders="activeTab = 'orders'"
           @token-expired="handleTokenExpired"
         />
+        <div v-else-if="activeTab === 'orders'">
+          <decilo-orders :customer-info="customerInfo" @token-expired="handleTokenExpired" />
+        </div>
       </main>
     </div>
   </div>
@@ -120,7 +120,7 @@ export default {
   },
   data() {
     return {
-      activeTab: 'orders',
+      activeTab: 'products',
       email: '',
       password: '',
       error: '',
@@ -397,7 +397,7 @@ export default {
 }
 
 .dashboard-logo {
-  height: 40px;
+  height: 80%;
   width: auto;
 }
 

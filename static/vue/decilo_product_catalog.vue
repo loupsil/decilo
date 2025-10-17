@@ -18,7 +18,7 @@
             <input
               type="text"
               v-model="searchQuery"
-              placeholder="Search ear tips..."
+              placeholder="Search products..."
               @input="filterProducts"
             >
           </div>
@@ -71,7 +71,7 @@
           <div class="product-image" @click="showProductDetails(product)">
             <img :src="product.image_url" :alt="product.name">
             <div class="image-overlay">
-              <span>View Details</span>
+              <span>Order</span>
             </div>
           </div>
             <div class="product-details">
@@ -81,7 +81,7 @@
               </div>
               <p class="product-description">{{ product.description }}</p>
               <div class="product-actions">
-                <button class="details-btn" @click="showProductDetails(product)">View Details</button>
+                <button class="details-btn" @click="showProductDetails(product)">Order</button>
               </div>
             </div>
         </div>
@@ -515,7 +515,7 @@ export default {
   border-radius: 16px;
   padding: 24px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  border: 1px solid #334155;
+  border: 1px solid #ffffff;
   display: flex;
   flex-direction: column;
 }
@@ -579,7 +579,7 @@ export default {
   color: #ffffff;
   margin: 0;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--primary-color);
+  border-bottom: 2px solid #ffffff;
 }
 
 .categories-list {
@@ -643,8 +643,8 @@ export default {
 }
 
 .category-checkbox-item input[type="checkbox"]:checked + .checkmark {
-  background: var(--primary-color);
-  border-color: var(--primary-color);
+  background: #ffffff;
+  border-color: #ffffff;
 }
 
 .category-checkbox-item input[type="checkbox"]:checked + .checkmark::after {
@@ -654,7 +654,7 @@ export default {
   top: 2px;
   width: 6px;
   height: 10px;
-  border: solid white;
+  border: solid #000000;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -847,12 +847,12 @@ export default {
   flex: 1;
   padding: 12px 20px;
   border-radius: 12px;
-  border: none;
+  border: 1px solid #ffffff;
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  background: var(--primary-color);
+  background: #000000;
   color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -875,8 +875,11 @@ export default {
 }
 
 .details-btn:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
 }
 
 
@@ -958,6 +961,7 @@ export default {
 
   .categories-sidebar {
     width: 260px;
+    border: 0.5px solid #ffffff;
   }
 
   .products-grid {

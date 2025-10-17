@@ -252,6 +252,7 @@
             </div>
           </div>
         </div>
+      </div>
 
       <div v-else class="empty-state">
         <div class="empty-icon">
@@ -419,7 +420,7 @@ export default {
       const stageIndex = this.productionStageIndex(state)
       const stages = [
         { name: 'Review', width: '16%', color: '#f59e0b' },
-        { name: 'Queue', width: '40%', color: 'var(--primary-color)' },
+        { name: 'Queue', width: '40%', color: '#ffffff' },
         { name: 'Progress', width: '70%', color: '#8b5cf6' },
         { name: 'Complete', width: '100%', color: '#10b981' }
       ]
@@ -755,7 +756,7 @@ export default {
 
 .search-input:focus {
   outline: none;
-  border-color: var(--primary-color);
+  border-color: #ffffff;
   background: rgba(59, 130, 246, 0.05);
 }
 
@@ -804,19 +805,24 @@ export default {
 
 .summary-card.clickable {
   cursor: pointer;
+  border: 0.5px solid #ffffff
 }
 
 .summary-card.clickable:hover {
-  border-color: var(--primary-color);
+  border-color: #ffffff;
 }
 
 .summary-card.active {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
+  border-color: #ffffff;
+  background: #ffffff;
 }
 
 .summary-card.active .summary-label {
-  color: #93c5fd;
+  color: #000000;
+}
+
+.summary-card.active .summary-value {
+  color: #000000;
 }
 
 .summary-label {
@@ -908,7 +914,7 @@ export default {
 }
 
 .order-item.selected {
-  border-color: var(--primary-color);
+  border-color: #ffffff;
   box-shadow: 0 8px 32px rgba(59, 130, 246, 0.1);
 }
 
@@ -1013,7 +1019,7 @@ export default {
 }
 
 .status-dot-small.status-queue {
-  background: var(--primary-color);
+  background: #ffffff;
 }
 
 .status-dot-small.status-progress {
@@ -1110,6 +1116,7 @@ export default {
   border-color: #10b981;
   transform: scale(1.2);
   box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+  outline: none;
 }
 
 @keyframes pulse {
@@ -1124,8 +1131,9 @@ export default {
 .order-number-badge {
   display: inline-flex;
   align-items: center;
-  background: var(--primary-color);
+  background: rgba(30, 41, 59, 0.8);
   color: #ffffff;
+  border: 1px solid #334155;
   padding: 6px 12px;
   border-radius: 16px;
   font-size: 12px;
@@ -1175,7 +1183,7 @@ export default {
 }
 
 .status-dot.status-queue {
-  background: var(--primary-color);
+  background: #ffffff;
 }
 
 .status-dot.status-progress {
@@ -1319,7 +1327,7 @@ export default {
 
 .products-count {
   background: rgba(59, 130, 246, 0.1);
-  color: var(--primary-color);
+  color: #ffffff;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 12px;
@@ -1389,7 +1397,7 @@ export default {
 }
 
 .product-item:hover .product-arrow {
-  color: var(--primary-color);
+  color: #ffffff;
   transform: translateX(4px);
 }
 
@@ -1492,7 +1500,7 @@ export default {
 }
 
 .doc-link:hover {
-  color: var(--primary-color);
+  color: #ffffff;
   transform: translateX(4px);
 }
 
