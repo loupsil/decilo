@@ -86,7 +86,7 @@
 
             <!-- Client Type Selection (if not selected yet) -->
             <div v-if="!isClientTypeSelected" class="client-type-selection">
-              <h3>Is this a new client or an existing client?</h3>
+              <h3>Is this a new patient or an existing patient?</h3>
               <div class="client-type-buttons">
                 <button
                   class="client-type-btn"
@@ -129,9 +129,9 @@
             <!-- Existing Client Selection -->
             <div v-else-if="clientType === 'existing'" class="existing-client-section">
               <div class="client-type-header">
-                <h3>Existing Client</h3>
+                <h3>Existing Patient</h3>
                 <button v-if="!isWithPreviousOrder" class="change-client-type-btn" @click="changeClientType">
-                  Change to New Client
+                  Change to New Patient
                 </button>
               </div>
 
@@ -242,9 +242,9 @@
             <!-- New Client Form -->
             <div v-else-if="clientType === 'new'" class="new-client-section">
               <div class="client-type-header">
-                <h3>New Client</h3>
+                <h3>New Patient</h3>
                 <button class="change-client-type-btn" @click="changeClientType">
-                  Change to Existing Client
+                  Change to Existing Patient
                 </button>
               </div>
 
@@ -778,7 +778,7 @@ export default {
       // Validate patient information only when trying to move from step 1 (Patient Information) to step 2 (Documents)
       if (this.orderStep === 1) {
         if (!this.isClientTypeSelected) {
-          this.patientValidationError = 'Please select whether this is a new client or an existing client.';
+          this.patientValidationError = 'Please select whether this is a new patient or an existing patient.';
           this.$emit('show-error', {
             message: this.patientValidationError,
             type: 'error'
