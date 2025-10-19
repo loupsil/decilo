@@ -355,66 +355,68 @@
                   </div>
                 </div>
 
+                <!-- Loading spinner for existing patients -->
+                <div v-if="clientType === 'existing' && earImpressionsLoading" class="form-group">
+                  <div class="dropdown-loading">
+                    <div class="loading-spinner-small"></div>
+                    <span>Loading documents...</span>
+                  </div>
+                </div>
+
                 <!-- With previous order: show previously stored documents (downloadable) -->
                 <div v-if="isWithPreviousOrder" class="form-group">
-              <h3 style="margin-top: 16px;">Existing Ear Impression Documents</h3>
-              <div v-if="earImpressionsLoading" class="dropdown-loading">
-                <div class="loading-spinner-small"></div>
-                <span>Loading documents...</span>
-              </div>
-              <div v-else>
-                <div v-if="earImpressionsError" class="patient-validation-error">{{ earImpressionsError }}</div>
-                <ul v-else class="existing-docs-list">
-                  <li>
-                    <strong>Right:</strong>
-                    <template v-if="earImpressions.right?.exists">
-                      <a class="doc-link" :href="downloadEarUrl('right')" @click.prevent="downloadEar('right')">
-                        <span class="doc-icon" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 5v10"/>
-                            <path d="m7 10 5 5 5-5"/>
-                            <path d="M5 19h14"/>
-                          </svg>
-                        </span>
-                        <span class="doc-filename">{{ earImpressions.right.filename }}</span>
-                      </a>
-                    </template>
-                    <template v-else>
-                      <span>Not found</span>
-                    </template>
-                  </li>
-                  <li>
-                    <strong>Left:</strong>
-                    <template v-if="earImpressions.left?.exists">
-                      <a class="doc-link" :href="downloadEarUrl('left')" @click.prevent="downloadEar('left')">
-                        <span class="doc-icon" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 5v10"/>
-                            <path d="m7 10 5 5 5-5"/>
-                            <path d="M5 19h14"/>
-                          </svg>
-                        </span>
-                        <span class="doc-filename">{{ earImpressions.left.filename }}</span>
-                      </a>
-                    </template>
-                    <template v-else>
-                      <span>Not found</span>
-                    </template>
-                  </li>
-                </ul>
-              </div>
-            </div>
+                  <h3 style="margin-top: 16px;">Existing Ear Impression Documents</h3>
+                  <div v-if="earImpressionsError" class="patient-validation-error">{{ earImpressionsError }}</div>
+                  <ul v-else class="existing-docs-list">
+                    <li>
+                      <strong>Right:</strong>
+                      <template v-if="earImpressions.right?.exists">
+                        <a class="doc-link" :href="downloadEarUrl('right')" @click.prevent="downloadEar('right')">
+                          <span class="doc-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M12 5v10"/>
+                              <path d="m7 10 5 5 5-5"/>
+                              <path d="M5 19h14"/>
+                            </svg>
+                          </span>
+                          <span class="doc-filename">{{ earImpressions.right.filename }}</span>
+                        </a>
+                      </template>
+                      <template v-else>
+                        <span>Not found</span>
+                      </template>
+                    </li>
+                    <li>
+                      <strong>Left:</strong>
+                      <template v-if="earImpressions.left?.exists">
+                        <a class="doc-link" :href="downloadEarUrl('left')" @click.prevent="downloadEar('left')">
+                          <span class="doc-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M12 5v10"/>
+                              <path d="m7 10 5 5 5-5"/>
+                              <path d="M5 19h14"/>
+                            </svg>
+                          </span>
+                          <span class="doc-filename">{{ earImpressions.left.filename }}</span>
+                        </a>
+                      </template>
+                      <template v-else>
+                        <span>Not found</span>
+                      </template>
+                    </li>
+                  </ul>
+                </div>
 
                 <!-- Conditionally render impression uploads only when 3D scan is selected -->
                 <div v-if="isImpressionScan3D" class="ear-upload-container">
-              <div 
-                v-if="showLeftUpload" 
-                class="ear-upload-box left-ear" 
-                :class="{ 'has-file': !!orderForm.leftImpressionDoc, 'dragging': isDraggingLeft }"
-                @click="triggerFileInput('left')"
-                @dragover.prevent="isDraggingLeft = true"
-                @dragleave.prevent="isDraggingLeft = false"
-                @drop.prevent="handleDrop('left', $event)"
+              <div
+                v-if="showLeftUpload"
+                class="ear-upload-box left-ear"
+                :class="{ 'has-file': !!orderForm.leftImpressionDoc, 'dragging': isDraggingLeft, 'disabled': clientType === 'existing' && earImpressionsLoading }"
+                @click="!(clientType === 'existing' && earImpressionsLoading) ? triggerFileInput('left') : $event.preventDefault()"
+                @dragover.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingLeft = true) : null"
+                @dragleave.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingLeft = false) : null"
+                @drop.prevent="!(clientType === 'existing' && earImpressionsLoading) ? handleDrop('left', $event) : null"
               >
                 <div class="ear-illustration left">
                   <img
@@ -440,14 +442,14 @@
                 </div>
               </div>
 
-              <div 
-                v-if="showRightUpload" 
-                class="ear-upload-box right-ear" 
-                :class="{ 'has-file': !!orderForm.rightImpressionDoc, 'dragging': isDraggingRight }"
-                @click="triggerFileInput('right')"
-                @dragover.prevent="isDraggingRight = true"
-                @dragleave.prevent="isDraggingRight = false"
-                @drop.prevent="handleDrop('right', $event)"
+              <div
+                v-if="showRightUpload"
+                class="ear-upload-box right-ear"
+                :class="{ 'has-file': !!orderForm.rightImpressionDoc, 'dragging': isDraggingRight, 'disabled': clientType === 'existing' && earImpressionsLoading }"
+                @click="!(clientType === 'existing' && earImpressionsLoading) ? triggerFileInput('right') : $event.preventDefault()"
+                @dragover.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingRight = true) : null"
+                @dragleave.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingRight = false) : null"
+                @drop.prevent="!(clientType === 'existing' && earImpressionsLoading) ? handleDrop('right', $event) : null"
               >
                 <div class="ear-illustration right">
                   <img
@@ -1704,6 +1706,29 @@ export default {
   transform: scale(1.02);
 }
 
+.ear-upload-box.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  position: relative;
+}
+
+.ear-upload-box.disabled::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  pointer-events: none;
+}
+
+.ear-upload-box.disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .ear-illustration {
   width: 100px;
   height: 150px;
@@ -1911,6 +1936,15 @@ export default {
   padding: 20px;
   color: #64748b;
   font-size: 14px;
+}
+
+.loading-spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #64748b;
+  border-top: 2px solid transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 .dropdown-options-list {
