@@ -310,12 +310,16 @@ export default {
       // Apply search filter
       if (this.searchQuery) {
         const query = this.searchQuery.toLowerCase()
-        filtered = filtered.filter(order =>
-          order && order.number && order.number.toLowerCase().includes(query) ||
-          (order && order.products && order.products.some(product =>
+        filtered = filtered.filter(order => {
+          if (!order) return false
+          const numberMatch = order.number && order.number.toLowerCase().includes(query)
+          const productMatch = Array.isArray(order.products) && order.products.some(product =>
             product && product.name && product.name.toLowerCase().includes(query)
-          ))
-        )
+          )
+          const patientName = order.patient && order.patient.name ? String(order.patient.name).toLowerCase() : ''
+          const patientMatch = patientName.includes(query)
+          return numberMatch || productMatch || patientMatch
+        })
       }
 
       // Apply summary filter
