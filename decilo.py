@@ -1537,6 +1537,35 @@ def create_order(current_user):
             'sale.order', 'create', [order_vals]
         )
 
+        # Ensure the patient contact is tagged with "B2Audio" after order creation
+        try:
+            if patient_info and patient_info.get('id'):
+                # Find or create the tag in res.partner.category
+                tag_name = 'B2Audio'
+                tag_ids = models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner.category', 'search',
+                    [[('name', '=', tag_name)]],
+                    {'limit': 1}
+                )
+                if tag_ids:
+                    tag_id = tag_ids[0]
+                else:
+                    tag_id = models.execute_kw(
+                        ODOO_DB, uid, ODOO_API_KEY,
+                        'res.partner.category', 'create',
+                        [{'name': tag_name}]
+                    )
+
+                # Add the tag to the patient contact (do not remove existing tags)
+                models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'res.partner', 'write',
+                    [[patient_info['id']], {'category_id': [(4, tag_id)]}]
+                )
+        except Exception as e:
+            logger.warning(f"Failed to tag patient with B2Audio: {str(e)}")
+
         # Automatically confirm the sale order
         models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
