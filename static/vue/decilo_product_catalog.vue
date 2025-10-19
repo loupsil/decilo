@@ -433,10 +433,12 @@ export default {
       // Reset selected variants when showing a new product
       this.selectedVariants = {}
 
-      // Pre-select first value of each variant if available
+      // Pre-select first value of each variant if available, except Ear Impression Type
       if (product.variants) {
         product.variants.forEach(variant => {
-          if (variant.values && variant.values.length > 0) {
+          if (variant.values && variant.values.length > 0 &&
+              variant.attribute !== 'Ear Impression Type' &&
+              !variant.attribute.toLowerCase().includes('ear impression')) {
             this.selectedVariants[variant.attribute] = variant.values[0]
           }
         })
@@ -453,7 +455,11 @@ export default {
       return this.selectedVariants[attribute] === value
     },
     handleVariantSelection({ attribute, value }) {
-      this.selectedVariants[attribute] = value;
+      if (value === null) {
+        delete this.selectedVariants[attribute];
+      } else {
+        this.selectedVariants[attribute] = value;
+      }
     },
 
     viewOrders() {

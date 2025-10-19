@@ -54,10 +54,10 @@
             </div>
 
             <!-- Product Variants -->
-            <div v-if="selectedProduct.variants && selectedProduct.variants.length > 0" class="variants-section">
+            <div v-if="filteredVariants.length > 0" class="variants-section">
               <h3>Available Options</h3>
               <div class="variant-groups">
-                <div v-for="variant in selectedProduct.variants" :key="variant.attribute" class="variant-group">
+                <div v-for="variant in filteredVariants" :key="variant.attribute" class="variant-group">
                   <h4>{{ variant.attribute }}</h4>
                   <div class="variant-options">
                     <button
@@ -83,6 +83,7 @@
             <div v-if="patientValidationError" class="patient-validation-error">
               {{ patientValidationError }}
             </div>
+
 
             <!-- Client Type Selection (if not selected yet) -->
             <div v-if="!isClientTypeSelected" class="client-type-selection">
@@ -130,7 +131,7 @@
             <div v-else-if="clientType === 'existing'" class="existing-client-section">
               <div class="client-type-header">
                 <h3>Existing Patient</h3>
-                <button v-if="!isWithPreviousOrder" class="change-client-type-btn" @click="changeClientType">
+                <button class="change-client-type-btn" @click="changeClientType">
                   Change to New Patient
                 </button>
               </div>
@@ -336,9 +337,17 @@
                 </div>
               </div>
 
+              <!-- Sending impressions method: show message (Paste - Sending ear impressions variant) -->
+              <div v-else-if="isSendingImpressions" class="form-group">
+                <div class="highlight-note">
+                  <span class="highlight-icon">📦</span>
+                  <span class="highlight-text"><strong>Merci d'envoyer les empreintes en indiquant le numéro ID MO</strong></span>
+                </div>
+              </div>
+
               <!-- Scan method: show upload options (default for existing patients, or when scan is selected for new patients) -->
               <div v-else-if="impressionMethod === 'scan' || clientType === 'existing'">
-                
+
                 <!-- Document status message for existing patients -->
                 <div v-if="clientType === 'existing' && !earImpressionsLoading" class="form-group">
                   <div v-if="earImpressionsError" class="info-note error">
@@ -351,7 +360,7 @@
                   </div>
                   <div v-else class="info-note warning">
                     <span class="info-icon">ℹ️</span>
-                    <span class="info-text"><strong>No existing documents found for {{ selectedPatient?.name }}</strong> - Please upload new ear impression documents.</span>
+                    <span class="info-text"><strong>No existing documents found for {{ selectedPatient?.name }}</strong> - Please upload new ear impression documents or send ear impressions indicating the MO ID number.</span>
                   </div>
                 </div>
 
@@ -363,118 +372,18 @@
                   </div>
                 </div>
 
-                <!-- With previous order: show previously stored documents (downloadable) -->
-                <div v-if="isWithPreviousOrder" class="form-group">
-                  <h3 style="margin-top: 16px;">Existing Ear Impression Documents</h3>
-                  <div v-if="earImpressionsError" class="patient-validation-error">{{ earImpressionsError }}</div>
-                  <ul v-else class="existing-docs-list">
-                    <li>
-                      <strong>Right:</strong>
-                      <template v-if="earImpressions.right?.exists">
-                        <a class="doc-link" :href="downloadEarUrl('right')" @click.prevent="downloadEar('right')">
-                          <span class="doc-icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <path d="M12 5v10"/>
-                              <path d="m7 10 5 5 5-5"/>
-                              <path d="M5 19h14"/>
-                            </svg>
-                          </span>
-                          <span class="doc-filename">{{ earImpressions.right.filename }}</span>
-                        </a>
-                      </template>
-                      <template v-else>
-                        <span>Not found</span>
-                      </template>
-                    </li>
-                    <li>
-                      <strong>Left:</strong>
-                      <template v-if="earImpressions.left?.exists">
-                        <a class="doc-link" :href="downloadEarUrl('left')" @click.prevent="downloadEar('left')">
-                          <span class="doc-icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <path d="M12 5v10"/>
-                              <path d="m7 10 5 5 5-5"/>
-                              <path d="M5 19h14"/>
-                            </svg>
-                          </span>
-                          <span class="doc-filename">{{ earImpressions.left.filename }}</span>
-                        </a>
-                      </template>
-                      <template v-else>
-                        <span>Not found</span>
-                      </template>
-                    </li>
-                  </ul>
-                </div>
-
-                <!-- Conditionally render impression uploads only when 3D scan is selected -->
-                <div v-if="isImpressionScan3D" class="ear-upload-container">
-              <div
-                v-if="showLeftUpload"
-                class="ear-upload-box left-ear"
-                :class="{ 'has-file': !!orderForm.leftImpressionDoc, 'dragging': isDraggingLeft, 'disabled': clientType === 'existing' && earImpressionsLoading }"
-                @click="!(clientType === 'existing' && earImpressionsLoading) ? triggerFileInput('left') : $event.preventDefault()"
-                @dragover.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingLeft = true) : null"
-                @dragleave.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingLeft = false) : null"
-                @drop.prevent="!(clientType === 'existing' && earImpressionsLoading) ? handleDrop('left', $event) : null"
-              >
-                <div class="ear-illustration left">
-                  <img
-                    src="/static/images/icon ear.png"
-                    alt="Left Ear Impression"
-                    class="ear-icon"
-                  >
-                </div>
-                <div class="ear-upload-content">
-                  <h4>Left Ear<span v-if="requireLeftDoc" class="required-mark"> *</span></h4>
-                  <div class="upload-info">
-                    <span v-if="!orderForm.leftImpressionDoc" class="upload-prompt">Click or drag file here</span>
-                    <span v-else class="uploaded-filename">{{ orderForm.leftImpressionDoc.name }}</span>
-                  </div>
-                  <input
-                    ref="leftFileInput"
-                    id="leftImpressionDoc"
-                    type="file"
-                    @change="handleFileUpload('left', $event)"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    class="hidden-file-input"
-                  >
-                </div>
-              </div>
-
-              <div
-                v-if="showRightUpload"
-                class="ear-upload-box right-ear"
-                :class="{ 'has-file': !!orderForm.rightImpressionDoc, 'dragging': isDraggingRight, 'disabled': clientType === 'existing' && earImpressionsLoading }"
-                @click="!(clientType === 'existing' && earImpressionsLoading) ? triggerFileInput('right') : $event.preventDefault()"
-                @dragover.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingRight = true) : null"
-                @dragleave.prevent="!(clientType === 'existing' && earImpressionsLoading) ? (isDraggingRight = false) : null"
-                @drop.prevent="!(clientType === 'existing' && earImpressionsLoading) ? handleDrop('right', $event) : null"
-              >
-                <div class="ear-illustration right">
-                  <img
-                    src="/static/images/icon ear.png"
-                    alt="Right Ear Impression"
-                    class="ear-icon"
-                  >
-                </div>
-                <div class="ear-upload-content">
-                  <h4>Right Ear<span v-if="requireRightDoc" class="required-mark"> *</span></h4>
-                  <div class="upload-info">
-                    <span v-if="!orderForm.rightImpressionDoc" class="upload-prompt">Click or drag file here</span>
-                    <span v-else class="uploaded-filename">{{ orderForm.rightImpressionDoc.name }}</span>
-                  </div>
-                  <input
-                    ref="rightFileInput"
-                    id="rightImpressionDoc"
-                    type="file"
-                    @change="handleFileUpload('right', $event)"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    class="hidden-file-input"
-                  >
-                </div>
-              </div>
-                </div>
+                <!-- Conditionally render impression uploads for 3D scan or previous order -->
+                <upload-ear-impressions
+                  v-if="isImpressionScan3D || isWithPreviousOrder"
+                  :left-impression-doc="orderForm.leftImpressionDoc"
+                  :right-impression-doc="orderForm.rightImpressionDoc"
+                  :show-left-upload="showLeftUpload"
+                  :show-right-upload="showRightUpload"
+                  :require-left-doc="requireLeftDoc"
+                  :require-right-doc="requireRightDoc"
+                  :disabled="clientType === 'existing' && earImpressionsLoading"
+                  @file-upload="handleFileUploadFromComponent"
+                ></upload-ear-impressions>
               </div>
             </div>
 
@@ -516,7 +425,7 @@
               <template v-if="isSendingImpressions">
                 <div class="highlight-note">
                   <span class="highlight-icon">📦</span>
-                  <span class="highlight-text"><strong>Merci d’envoyer les empreintes en indiquant le numéro ID MO</strong></span>
+                  <span class="highlight-text"><strong>Merci d'envoyer les empreintes en indiquant le numéro ID MO</strong></span>
                 </div>
               </template>
               <template v-else>
@@ -587,8 +496,13 @@ const clickOutside = {
   }
 };
 
+import UploadEarImpressions from './upload_ear_impressions.vue';
+
 export default {
   name: 'DeciloCheckout',
+  components: {
+    UploadEarImpressions
+  },
   directives: {
     'click-outside': clickOutside
   },
@@ -624,8 +538,6 @@ export default {
       earImpressions: { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } },
       earImpressionsLoading: false,
       earImpressionsError: '',
-      isDraggingLeft: false,
-      isDraggingRight: false,
       preloadedLeftDoc: null, // Pre-loaded document from existing patient
       preloadedRightDoc: null, // Pre-loaded document from existing patient
     }
@@ -652,20 +564,20 @@ export default {
       return false;
     },
 
-    // Whether the Step 1 options include "Impression Paste - Scan 3D"
+    // Whether the Step 2 options include "Impression Paste - Scan 3D"
     isImpressionScan3D() {
       const values = Object.values(this.selectedVariants || {})
       console.log('values', values)
       return values.includes('Paste - 3D Scan')
     },
 
-    // Whether the Step 1 options include "Paste - Sending ear impressions" (skip documents)
+    // Whether the Step 2 options include "Paste - Sending ear impressions" (skip documents)
     isSendingImpressions() {
       const values = Object.values(this.selectedVariants || {})
       return values.includes('Paste - Sending ear impressions')
     },
 
-    // Whether the Step 1 options include "With previous order" (force existing client flow)
+    // Whether the Step 2 options include "With previous order" (force existing client flow)
     isWithPreviousOrder() {
       const values = Object.values(this.selectedVariants || {})
       return values.includes('From previous order')
@@ -682,12 +594,12 @@ export default {
 
     // UI flags for which uploads to show and require
     showRightUpload() {
-      if (!this.isImpressionScan3D) return false
+      if (!this.isImpressionScan3D && !this.isWithPreviousOrder) return false
       const s = (this.selectedSides || '').toLowerCase()
       return s === 'stereo' || s === 'mono r'
     },
     showLeftUpload() {
-      if (!this.isImpressionScan3D) return false
+      if (!this.isImpressionScan3D && !this.isWithPreviousOrder) return false
       const s = (this.selectedSides || '').toLowerCase()
       return s === 'stereo' || s === 'mono l'
     },
@@ -696,6 +608,15 @@ export default {
     },
     requireLeftDoc() {
       return this.showLeftUpload
+    },
+
+    // Filter out Ear Impression Type variants from display since they're auto-selected
+    filteredVariants() {
+      if (!this.selectedProduct || !this.selectedProduct.variants) return []
+      return this.selectedProduct.variants.filter(variant =>
+        !(variant.attribute === 'Ear Impression Type' ||
+          variant.attribute.toLowerCase().includes('ear impression'))
+      )
     }
   },
   watch: {
@@ -709,24 +630,20 @@ export default {
       immediate: true
     }
     ,
-    // React to variant changes to force Existing Client selection when "With previous order" is chosen
-    selectedVariants: {
-      handler() {
-        if (this.isWithPreviousOrder) {
-          this.clientType = 'existing'
-        }
-      },
-      deep: true
-    },
+
+
     orderStep(newVal) {
-      // Load previous-order documents when entering Documents step with existing patient
-      if (newVal === 2 && this.selectedPatient && this.clientType === 'existing') {
+      // Load documents when entering Documents step with existing patient or with previous order
+      // But NOT when sending impressions (Paste - Sending ear impressions variant)
+      if (newVal === 2 && this.selectedPatient && (this.clientType === 'existing' || this.isWithPreviousOrder) && !this.isSendingImpressions) {
         this.fetchAndPreloadPatientDocs()
       }
+
     },
     impressionMethod(newVal) {
       // When user selects 'scan' method and has an existing patient, pre-load their documents
-      if (newVal === 'scan' && this.selectedPatient && this.clientType === 'existing') {
+      // But NOT when sending impressions (Paste - Sending ear impressions variant)
+      if (newVal === 'scan' && this.selectedPatient && this.clientType === 'existing' && !this.isSendingImpressions) {
         this.fetchAndPreloadPatientDocs()
       }
     }
@@ -743,20 +660,15 @@ export default {
           this.orderStep--;
         }
 
-        // If we returned to Product step, clear client type selection and patient data
-        if (this.orderStep === 0) {
-          if (this.isWithPreviousOrder) {
-            // Force existing flow when "With previous order" is chosen
-            this.clientType = 'existing'
-          } else {
-            this.clientType = null
-          }
-          // Always clear manual/selected patient when going back to product
-          this.orderForm.patientId = null
-          this.orderForm.patientFirstName = ''
-          this.orderForm.patientLastName = ''
-          this.patientValidationError = ''
-        }
+    // If we returned to Product step, clear client type selection and patient data
+    if (this.orderStep === 0) {
+      this.clientType = null
+      // Always clear manual/selected patient when going back to product
+      this.orderForm.patientId = null
+      this.orderForm.patientFirstName = ''
+      this.orderForm.patientLastName = ''
+      this.patientValidationError = ''
+    }
 
         // If we returned to Patient step, clear impression method and preloaded docs
         if (this.orderStep === 1) {
@@ -772,11 +684,7 @@ export default {
     nextStep() {
       // Initialize clientType when moving from Product -> Patient Information
       if (this.orderStep === 0) {
-        if (this.isWithPreviousOrder) {
-          this.clientType = 'existing'
-        } else {
-          this.clientType = null
-        }
+        this.clientType = null
       }
 
       // Validate patient information only when trying to move from step 1 (Patient Information) to step 2 (Documents)
@@ -922,44 +830,11 @@ export default {
       }
     },
 
-    handleFileUpload(side, event) {
-      const file = event.target.files[0];
-      if (file) {
-        if (side === 'right') {
-          this.orderForm.rightImpressionDoc = file;
-        } else {
-          this.orderForm.leftImpressionDoc = file;
-        }
-      }
-    },
-
-    triggerFileInput(side) {
-      if (side === 'left') {
-        this.$refs.leftFileInput.click();
+    handleFileUploadFromComponent({ side, file }) {
+      if (side === 'right') {
+        this.orderForm.rightImpressionDoc = file;
       } else {
-        this.$refs.rightFileInput.click();
-      }
-    },
-
-    handleDrop(side, event) {
-      if (side === 'left') {
-        this.isDraggingLeft = false;
-      } else {
-        this.isDraggingRight = false;
-      }
-      
-      const files = event.dataTransfer.files;
-      if (files.length > 0) {
-        const file = files[0];
-        // Check file type
-        const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
-        if (allowedTypes.includes(file.type) || file.name.match(/\.(pdf|doc|docx|jpg|jpeg|png)$/i)) {
-          if (side === 'right') {
-            this.orderForm.rightImpressionDoc = file;
-          } else {
-            this.orderForm.leftImpressionDoc = file;
-          }
-        }
+        this.orderForm.leftImpressionDoc = file;
       }
     },
 
@@ -986,6 +861,18 @@ export default {
       };
       this.preloadedLeftDoc = null;
       this.preloadedRightDoc = null;
+
+      // Pre-select first value for all variants except ear impression type (which is handled in step 1)
+      if (this.selectedProduct && this.selectedProduct.variants) {
+        this.selectedProduct.variants.forEach(variant => {
+          // Skip ear impression type as it's handled separately in step 1
+          if (variant.attribute !== 'Ear Impression Type' && !variant.attribute.toLowerCase().includes('ear impression')) {
+            if (variant.values && variant.values.length > 0) {
+              this.$emit('variant-selected', { attribute: variant.attribute, value: variant.values[0] });
+            }
+          }
+        });
+      }
     },
 
     closeModal() {
@@ -997,9 +884,18 @@ export default {
       this.$emit('variant-selected', { attribute, value });
     },
 
+    toggleVariant(attribute, value) {
+      // Always select the variant (no deselection allowed)
+      // If already selected, do nothing
+      if (!this.isSelectedVariant(attribute, value)) {
+        this.$emit('variant-selected', { attribute, value });
+      }
+    },
+
     isSelectedVariant(attribute, value) {
       return this.selectedVariants[attribute] === value
     },
+
 
     async fetchPatientContacts() {
       this.isLoadingPatients = true;
@@ -1064,9 +960,13 @@ export default {
       if (type === 'new') {
         this.orderForm.patientId = null;
         this.selectedPatient = null;
+        // Remove "From previous order" variant when selecting new patient
+        this.$emit('variant-deselected', { attribute: 'Ear Impression Type', value: 'From previous order' });
       } else if (type === 'existing') {
         this.orderForm.patientFirstName = '';
         this.orderForm.patientLastName = '';
+        // Automatically select "From previous order" variant when selecting existing patient
+        this.$emit('variant-selected', { attribute: 'Ear Impression Type', value: 'From previous order' });
       }
     },
 
@@ -1083,6 +983,17 @@ export default {
 
     selectImpressionMethod(method) {
       this.impressionMethod = method;
+
+      // Automatically select the appropriate variant based on impression method
+      if (method === 'scan') {
+        this.$emit('variant-selected', { attribute: 'Ear Impression Type', value: 'Paste - 3D Scan' });
+        // Remove the sending impressions variant if it was selected
+        this.$emit('variant-deselected', { attribute: 'Ear Impression Type', value: 'Paste - Sending ear impressions' });
+      } else if (method === 'ship') {
+        this.$emit('variant-selected', { attribute: 'Ear Impression Type', value: 'Paste - Sending ear impressions' });
+        // Remove the 3D scan variant if it was selected
+        this.$emit('variant-deselected', { attribute: 'Ear Impression Type', value: 'Paste - 3D Scan' });
+      }
     },
 
     changeImpressionMethod() {
@@ -1092,6 +1003,9 @@ export default {
       this.orderForm.leftImpressionDoc = null;
       this.preloadedLeftDoc = null;
       this.preloadedRightDoc = null;
+      // Deselect both impression method variants when changing method
+      this.$emit('variant-deselected', { attribute: 'Ear Impression Type', value: 'Paste - 3D Scan' });
+      this.$emit('variant-deselected', { attribute: 'Ear Impression Type', value: 'Paste - Sending ear impressions' });
     },
 
     toggleDropdown() {
@@ -1636,168 +1550,6 @@ export default {
   font-size: 13px;
 }
 
-/* Ear Upload Container */
-.ear-upload-container {
-  display: flex;
-  justify-content: center;
-  gap: 32px;
-  margin-top: 24px;
-  margin-bottom: 24px;
-}
-
-.ear-upload-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  border: 3px solid;
-  border-radius: 16px;
-  background: var(--secondary-color);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
-  min-height: 280px;
-  width: 220px;
-  max-width: 220px;
-  justify-content: center;
-}
-
-.ear-upload-box.left-ear {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(59, 130, 246, 0.02));
-}
-
-.ear-upload-box.right-ear {
-  border-color: rgba(239, 68, 68, 0.5);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(239, 68, 68, 0.02));
-}
-
-.ear-upload-box.left-ear:hover {
-  border-color: rgba(59, 130, 246, 0.8);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.04));
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.2);
-}
-
-.ear-upload-box.right-ear:hover {
-  border-color: rgba(239, 68, 68, 0.8);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(239, 68, 68, 0.04));
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2);
-}
-
-.ear-upload-box.has-file.left-ear {
-  border-color: rgba(59, 130, 246, 1);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.06));
-}
-
-.ear-upload-box.has-file.right-ear {
-  border-color: rgba(239, 68, 68, 1);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.06));
-}
-
-.ear-upload-box.dragging.left-ear {
-  border-color: rgba(59, 130, 246, 1);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.08));
-  transform: scale(1.02);
-}
-
-.ear-upload-box.dragging.right-ear {
-  border-color: rgba(239, 68, 68, 1);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
-  transform: scale(1.02);
-}
-
-.ear-upload-box.disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  position: relative;
-}
-
-.ear-upload-box.disabled::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 16px;
-  pointer-events: none;
-}
-
-.ear-upload-box.disabled:hover {
-  transform: none;
-  box-shadow: none;
-}
-
-.ear-illustration {
-  width: 100px;
-  height: 150px;
-  margin-bottom: 24px;
-}
-
-.ear-illustration.left {
-  color: rgba(59, 130, 246, 0.8);
-}
-
-.ear-illustration.right {
-  color: rgba(239, 68, 68, 0.8);
-}
-
-.ear-illustration .ear-icon {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.ear-illustration.left .ear-icon {
-  transform: scaleX(-1);
-  filter: brightness(0) saturate(100%) invert(20%) sepia(92%) saturate(6500%) hue-rotate(200deg) brightness(100%) opacity(0.8);
-}
-
-.ear-illustration.right .ear-icon {
-  transform: scaleX(1);
-  filter: brightness(0) saturate(100%) invert(14%) sepia(96%) saturate(7000%) hue-rotate(0deg) brightness(95%) opacity(0.8);
-}
-
-.ear-upload-content {
-  text-align: center;
-  width: 100%;
-}
-
-.ear-upload-content h4 {
-  color: #ffffff;
-  margin: 0 0 16px 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.required-mark {
-  color: #ef4444;
-  margin-left: 4px;
-}
-
-.upload-info {
-  margin-top: 16px;
-  text-align: center;
-}
-
-.upload-prompt {
-  color: #94a3b8;
-  font-size: 14px;
-  font-weight: 500;
-  display: block;
-}
-
-.uploaded-filename {
-  color: #10b981;
-  font-size: 13px;
-  font-weight: 600;
-  word-break: break-word;
-}
-
-.hidden-file-input {
-  display: none;
-}
 
 
 /* Patient Selection Container */
@@ -2441,6 +2193,17 @@ export default {
   border-color: #444444;
 }
 
+/* Ear Impression Type Section */
+.ear-impression-type-section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+}
+
+.ear-impression-type-section h3 {
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
   .modal-content {
@@ -2787,6 +2550,21 @@ export default {
 .client-type-btn.active .client-type-content h4,
 .client-type-btn.active .client-type-content p {
   color: #ffffff;
+}
+
+.client-type-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+  background: #1e293b;
+  border-color: #374151;
+}
+
+.client-type-btn:disabled:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #374151;
+  background: #1e293b;
 }
 
 /* Client Type Header */
