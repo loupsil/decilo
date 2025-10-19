@@ -837,10 +837,16 @@ def get_customer_orders(current_user):
         # Collect all line ids and shipping partner ids for batch reads
         all_line_ids = []
         shipping_partner_ids = []
+        patient_ids = []
         for o in orders:
             all_line_ids.extend(o.get('order_line', []))
             if o.get('partner_shipping_id'):
                 shipping_partner_ids.append(o['partner_shipping_id'][0])
+            if o.get('x_studio_patient'):
+                xp = o['x_studio_patient']
+                patient_id = xp[0] if isinstance(xp, (list, tuple)) else xp
+                if patient_id:
+                    patient_ids.append(patient_id)
 
         # Read lines
         lines_by_id = {}
@@ -865,6 +871,18 @@ def get_customer_orders(current_user):
                 {'fields': partner_fields}
             )
             partners_by_id = {rec['id']: rec for rec in partner_records}
+
+        # Read patients with custom ID field
+        patients_by_id = {}
+        if patient_ids:
+            patient_fields = ['name', 'x_studio_id_custom']
+            patient_records = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'res.partner', 'read',
+                [list(set(patient_ids))],
+                {'fields': patient_fields}
+            )
+            patients_by_id = {rec['id']: rec for rec in patient_records}
 
         def map_state_to_status(state: str) -> str:
             if state in ['done']:
@@ -916,10 +934,19 @@ def get_customer_orders(current_user):
             # Build patient object from x_studio_patient m2o if present
             if o.get('x_studio_patient'):
                 xp = o['x_studio_patient']
+                patient_id = None
                 if isinstance(xp, (list, tuple)) and len(xp) >= 2:
-                    patient = {'id': xp[0], 'name': xp[1]}
+                    patient_id = xp[0]
+                    patient = {'id': patient_id, 'name': xp[1]}
                 elif isinstance(xp, int):
-                    patient = {'id': xp, 'name': None}
+                    patient_id = xp
+                    patient = {'id': patient_id, 'name': None}
+                
+                # Add the custom ID if available
+                if patient_id and patient_id in patients_by_id:
+                    patient_data = patients_by_id[patient_id]
+                    if patient_data.get('x_studio_id_custom'):
+                        patient['customId'] = patient_data['x_studio_id_custom']
 
             mo_data = origin_to_mo_data.get(o.get('name'))
             response_orders.append({
@@ -1071,10 +1098,13 @@ def get_order_details(current_user, order_id):
                     ODOO_DB, uid, ODOO_API_KEY,
                     'res.partner', 'read',
                     [pat_id],
-                    {'fields': ['comment']}
+                    {'fields': ['comment', 'x_studio_id_custom']}
                 )
                 if p_rec:
                     patient_comment = (p_rec[0].get('comment') or '').strip() or None
+                    # Add custom ID if available
+                    if p_rec[0].get('x_studio_id_custom'):
+                        patient['customId'] = p_rec[0]['x_studio_id_custom']
             except Exception:
                 patient_comment = None
 

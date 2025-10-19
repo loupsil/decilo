@@ -69,7 +69,7 @@
                   <div class="order-date">{{ order.date ? formatDate(order.date) : 'Unknown date' }}</div>
                   <div class="order-time">
                     {{ order.date ? formatTime(order.date) : '' }}
-                    <span v-if="order.patient?.name" class="doc-filename" style="margin-left:8px;">{{ '• ' + order.patient.name }}</span>
+                    <span v-if="order.patient?.name" class="doc-filename" style="margin-left:8px;">{{ '• ' + order.patient.name + (order.patient?.customId ? ' (#' + order.patient.customId + ')' : '') }}</span>
                   </div>
                 </div>
               </div>
@@ -228,7 +228,7 @@
                       <div class="product-info">
                         <span class="product-name">Name</span>
                         <div class="product-meta">
-                          <span class="product-id">{{ selectedOrderPatient?.name || '—' }}</span>
+                          <span class="product-id">{{ selectedOrderPatient?.name || '—' }}{{ selectedOrderPatient?.customId ? ' (#' + selectedOrderPatient.customId + ')' : '' }}</span>
                         </div>
                       </div>
                       <div class="product-arrow">
