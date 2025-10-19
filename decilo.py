@@ -297,7 +297,7 @@ class OdooXMLRPCClient(OdooClient):
         if domain is None:
             domain = []
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id']
+            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
             
         # First get product IDs
         product_ids = models.execute_kw(
@@ -362,9 +362,9 @@ class OdooXMLRPCClient(OdooClient):
     def read_product(self, product_id, fields=None):
         uid = self.authenticate()
         models = self._get_models()
-        
+
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id']
+            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
             
         # First get the product with basic fields and attribute lines
         product = models.execute_kw(
@@ -473,10 +473,11 @@ def get_products(current_user):
         search = request.args.get('search')
         category_id = request.args.get('category_id', type=int)
 
-        # Build domain - filter for Ear Tips categories only for now
+        # Build domain - filter for Ear Tips categories and published products only
         domain = [
             ('sale_ok', '=', True),  # Only show products that can be sold
-            ('categ_id.name', 'ilike', '%Ear%')  # Only show Ear Tips categories
+            ('categ_id.name', 'ilike', '%Ear%'),  # Only show Ear Tips categories
+            ('x_studio_is_published_b2audio', '=', True)  # Only show products published for B2Audio
         ]
 
         # Add category filter if provided

@@ -417,10 +417,11 @@
                 @drop.prevent="handleDrop('left', $event)"
               >
                 <div class="ear-illustration left">
-                  <svg viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M70 30C70 20 65 10 50 10C35 10 30 20 30 30C30 35 28 40 28 45C28 50 30 55 32 60C34 65 36 70 36 75C36 85 34 95 40 100C46 105 55 105 60 100C65 95 68 85 68 75C68 70 70 65 72 60C74 55 76 50 76 45C76 40 74 35 70 30Z" stroke="currentColor" stroke-width="3" fill="none"/>
-                    <ellipse cx="45" cy="50" rx="8" ry="12" stroke="currentColor" stroke-width="2" fill="none"/>
-                  </svg>
+                  <img
+                    src="/static/images/icon ear.png"
+                    alt="Left Ear Impression"
+                    class="ear-icon"
+                  >
                 </div>
                 <div class="ear-upload-content">
                   <h4>Left Ear<span v-if="requireLeftDoc" class="required-mark"> *</span></h4>
@@ -449,10 +450,11 @@
                 @drop.prevent="handleDrop('right', $event)"
               >
                 <div class="ear-illustration right">
-                  <svg viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M30 30C30 20 35 10 50 10C65 10 70 20 70 30C70 35 72 40 72 45C72 50 70 55 68 60C66 65 64 70 64 75C64 85 66 95 60 100C54 105 45 105 40 100C35 95 32 85 32 75C32 70 30 65 28 60C26 55 24 50 24 45C24 40 26 35 30 30Z" stroke="currentColor" stroke-width="3" fill="none"/>
-                    <ellipse cx="55" cy="50" rx="8" ry="12" stroke="currentColor" stroke-width="2" fill="none"/>
-                  </svg>
+                  <img
+                    src="/static/images/icon ear.png"
+                    alt="Right Ear Impression"
+                    class="ear-icon"
+                  >
                 </div>
                 <div class="ear-upload-content">
                   <h4>Right Ear<span v-if="requireRightDoc" class="required-mark"> *</span></h4>
@@ -527,10 +529,10 @@
             <div class="confirmation-content">
               <h2>Order Confirmation</h2>
               <p>Your order has been successfully placed!</p>
-              <button class="view-orders-btn" @click="viewOrders">
+              <button class="confirmation-btn" @click="viewOrders">
                 See My Orders
               </button>
-              <button class="back-to-products-btn" @click="backToProducts">
+              <button class="confirmation-btn" @click="backToProducts">
                 Place a new order
               </button>
             </div>
@@ -1335,7 +1337,7 @@ export default {
   min-height: 200px;
   border-radius: 14px;
   overflow: hidden;
-  background: var(--secondary-color);
+  background: rgba(30, 41, 59, 0.8);
   padding: 16px;
   box-sizing: border-box;
   border: 1px solid #475569;
@@ -1645,7 +1647,6 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 20px;
   border: 3px solid;
   border-radius: 16px;
   background: var(--secondary-color);
@@ -1707,7 +1708,6 @@ export default {
   width: 100px;
   height: 150px;
   margin-bottom: 24px;
-  transform: scaleX(-1);
 }
 
 .ear-illustration.left {
@@ -1718,9 +1718,20 @@ export default {
   color: rgba(239, 68, 68, 0.8);
 }
 
-.ear-illustration svg {
+.ear-illustration .ear-icon {
   width: 100%;
   height: 100%;
+  object-fit: contain;
+}
+
+.ear-illustration.left .ear-icon {
+  transform: scaleX(-1);
+  filter: brightness(0) saturate(100%) invert(20%) sepia(92%) saturate(6500%) hue-rotate(200deg) brightness(100%) opacity(0.8);
+}
+
+.ear-illustration.right .ear-icon {
+  transform: scaleX(1);
+  filter: brightness(0) saturate(100%) invert(14%) sepia(96%) saturate(7000%) hue-rotate(0deg) brightness(95%) opacity(0.8);
 }
 
 .ear-upload-content {
@@ -2145,7 +2156,7 @@ export default {
   color: #cccccc;
 }
 
-.view-orders-btn {
+.confirmation-btn {
   padding: 12px 24px;
   background: #000000;
   color: #ffffff;
@@ -2157,28 +2168,11 @@ export default {
   margin-bottom: 24px;
 }
 
-.view-orders-btn:hover {
+.confirmation-btn:hover {
   background: #ffffff;
   color: #000000;
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
-}
-
-.back-to-products-btn {
-  padding: 12px 24px;
-  background: transparent;
-  color: #ffffff;
-  border: 2px solid #64748b;
-  border-radius: 12px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.back-to-products-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: #ffffff;
-  transform: translateY(-2px);
 }
 
 /* Navigation Buttons */
@@ -2291,7 +2285,7 @@ export default {
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid #000000;
+  border: 2px solid #ffffff;
   border-top: 2px solid transparent;
   border-radius: 50%;
   animation: spin 1s linear infinite;

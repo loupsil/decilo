@@ -1,8 +1,8 @@
 <template>
   <div class="product-catalog">
     <div class="catalog-header">
-      <h1>Custom Ear Tips</h1>
-      <p class="subtitle">Browse our collection of professional ear tips</p>
+      <h1>decilo Products</h1>
+      <p class="subtitle">Explore our collection of professional decilo products </p>
     </div>
 
     <div class="catalog-content">
@@ -182,6 +182,9 @@ export default {
     filteredProducts() {
       let filtered = this.products
 
+      // Filter products that are published for B2Audio
+      filtered = filtered.filter(product => product.x_studio_is_published_b2audio === true)
+
       // Apply category filter
       if (this.selectedCategories.length > 0) {
         filtered = filtered.filter(product => this.selectedCategories.includes(product.category))
@@ -310,7 +313,8 @@ export default {
             specifications: this.extractSpecifications(product),
             variants: product.variants || [],
             category: shortCategoryName,
-            categoryId: product.categ_id ? product.categ_id[0] : null  // [0] contains the category ID
+            categoryId: product.categ_id ? product.categ_id[0] : null,  // [0] contains the category ID
+            x_studio_is_published_b2audio: product.x_studio_is_published_b2audio || false
           }
           console.log(`✨ Transformed product ${product.id}:`, transformedProduct)
           return transformedProduct
