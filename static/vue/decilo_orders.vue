@@ -219,7 +219,11 @@
                   <h4 class="section-title">Patient information</h4>
                 </div>
                 <div class="section-body">
-                  <div class="products-list">
+                  <div v-if="patientInfoLoading" class="dropdown-loading">
+                    <div class="loading-spinner-small"></div>
+                    <span>Loading patient information...</span>
+                  </div>
+                  <div v-else class="products-list">
                     <div class="product-item">
                       <div class="product-info">
                         <span class="product-name">Name</span>
@@ -243,10 +247,16 @@
                   <h4 class="section-title">Notes</h4>
                 </div>
                 <div class="section-body">
-                  <div v-if="selectedOrder.patient_comment" class="patient-notes-box">
-                    <div class="patient-notes-text" v-html="selectedOrder.patient_comment"></div>
+                  <div v-if="notesLoading" class="dropdown-loading">
+                    <div class="loading-spinner-small"></div>
+                    <span>Loading notes...</span>
                   </div>
-                  <div v-else class="section-empty">No notes</div>
+                  <div v-else>
+                    <div v-if="selectedOrder.patient_comment" class="patient-notes-box">
+                      <div class="patient-notes-text" v-html="selectedOrder.patient_comment"></div>
+                    </div>
+                    <div v-else class="section-empty">No notes</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -290,6 +300,8 @@ export default {
       docs: { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } },
       docsLoading: false,
       docsError: '',
+      patientInfoLoading: false,
+      notesLoading: false,
       lastDetailsOrderId: null,
     }
   },
@@ -355,10 +367,16 @@ export default {
       handler(newOrder) {
         // Fetch patient/docs only when order selection actually changes
         if (newOrder && newOrder.id && newOrder.id !== this.lastDetailsOrderId) {
+          this.docsLoading = true
+          this.patientInfoLoading = true
+          this.notesLoading = true
           this.loadSelectedOrderPartner(newOrder.id)
         } else if (!newOrder) {
           this.docs = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
           this.docsError = ''
+          this.docsLoading = false
+          this.patientInfoLoading = false
+          this.notesLoading = false
           this.selectedOrderPartner = null
           this.selectedOrderPatient = null
           this.lastDetailsOrderId = null
@@ -377,6 +395,7 @@ export default {
         if (!res.ok) throw new Error(body?.error || 'Failed to load order details')
         this.selectedOrderPartner = body?.partner || null
         this.selectedOrderPatient = body?.patient || null
+        this.patientInfoLoading = false
         // Merge patient_comment without changing object reference to avoid retriggering watcher
         if (this.selectedOrder && this.selectedOrder.id === orderId) {
           const comment = body?.patient_comment || ''
@@ -386,16 +405,21 @@ export default {
             this.selectedOrder.patient_comment = comment
           }
         }
+        this.notesLoading = false
         this.lastDetailsOrderId = orderId
         if (this.selectedOrderPatient?.id) {
           this.fetchOrderPatientDocs(this.selectedOrderPatient.id, this.selectedOrderPatient.name)
         } else {
           this.docs = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
           this.docsError = ''
+          this.docsLoading = false
         }
       } catch (_) {
         this.selectedOrderPartner = null
         this.selectedOrderPatient = null
+        this.patientInfoLoading = false
+        this.notesLoading = false
+        this.docsLoading = false
         this.lastDetailsOrderId = null
       }
     },
