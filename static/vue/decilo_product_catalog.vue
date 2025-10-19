@@ -229,13 +229,21 @@ export default {
       })
       
       const cacheKey = this.getCacheKey()
+      console.log('🔑 Cache key:', cacheKey)
+      console.log('💾 Cache size:', productCache.size)
+      
       if (productCache.has(cacheKey)) {
-        console.log('🧠 Using cached products for key:', cacheKey)
+        console.log('✅ ✅ ✅ USING CACHED PRODUCTS for key:', cacheKey)
         const cached = productCache.get(cacheKey)
         this.products = cached.products
         this.totalProducts = cached.totalProducts
         this.categories = cached.categories || []
         this.selectedCategories = cached.selectedCategories || []
+        console.log('📊 Cached data loaded:', {
+          productsCount: this.products.length,
+          categoriesCount: this.categories.length,
+          categories: this.categories.map(c => c.name)
+        })
         this.isLoading = false
         return
       }
@@ -289,11 +297,11 @@ export default {
         }
 
         const data = await response.json()
-        console.log('📦 Received products data:', {
+        console.log('📦 Received raw API response:', {
           totalProducts: data.total,
           numberOfProducts: data.products.length,
           categoriesCount: data.categories ? data.categories.length : 0,
-          firstProduct: data.products[0] // Show sample of first product
+          apiCategories: data.categories ? data.categories.map(c => ({ id: c.id, name: c.name, complete_name: c.complete_name })) : []
         })
 
         // Transform the Odoo data to match our component's structure
@@ -316,7 +324,7 @@ export default {
             categoryId: product.categ_id ? product.categ_id[0] : null,  // [0] contains the category ID
             x_studio_is_published_b2audio: product.x_studio_is_published_b2audio || false
           }
-          console.log(`✨ Transformed product ${product.id}:`, transformedProduct)
+          console.log(`✨ Transformed product ${product.id}: name='${transformedProduct.name}', category='${transformedProduct.category}'`)
           return transformedProduct
         })
 
@@ -333,7 +341,7 @@ export default {
         console.log('✅ Products loaded successfully:', {
           displayedProducts: this.products.length,
           totalProducts: this.totalProducts,
-          categories: this.categories.length
+          categories: this.categories.map(c => c.name)
         })
 
         // Store in cache
@@ -343,6 +351,7 @@ export default {
           categories: this.categories,
           selectedCategories: this.selectedCategories
         })
+        console.log('💾 Stored in cache. Cache now has', productCache.size, 'entries')
       } catch (error) {
         console.error('❌ Error fetching products:', {
           error: error.message,

@@ -473,10 +473,11 @@ def get_products(current_user):
         search = request.args.get('search')
         category_id = request.args.get('category_id', type=int)
 
+        logger.info(f"🔍 GET_PRODUCTS called with params - limit: {limit}, offset: {offset}, search: {search}, category_id: {category_id}")
+
         # Build domain - filter for Ear Tips categories and published products only
         domain = [
             ('sale_ok', '=', True),  # Only show products that can be sold
-            ('categ_id.name', 'ilike', '%Ear%'),  # Only show Ear Tips categories
             ('x_studio_is_published_b2audio', '=', True)  # Only show products published for B2Audio
         ]
 
@@ -487,6 +488,8 @@ def get_products(current_user):
         if search:
             domain.append(('name', 'ilike', search))
 
+        logger.info(f"📋 Search domain: {domain}")
+
         # Get products
         products = odoo_client.search_products(
             domain=domain,
@@ -495,17 +498,27 @@ def get_products(current_user):
             order=order
         )
 
+        logger.info(f"📦 Found {len(products)} products matching domain")
+        for i, product in enumerate(products):
+            logger.info(f"   Product {i+1}: id={product.get('id')}, name='{product.get('name')}', category='{product.get('categ_id', ['?', '?'])[1]}'")
+
         # Get all categories for filtering
         uid = get_uid()
         models = get_odoo_models()
 
         # Get categories that have products
+        logger.info(f"🏷️ Extracting category IDs from products...")
+        category_ids_from_products = list(set([p.get('categ_id', [0])[0] for p in products if p.get('categ_id')]))
+        logger.info(f"📌 Category IDs found in products: {category_ids_from_products}")
+
         category_ids = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.category', 'search',
-            [[('id', 'in', list(set([p.get('categ_id', [0])[0] for p in products if p.get('categ_id')])))]],
+            [[('id', 'in', category_ids_from_products)]],
             {'order': 'complete_name'}
         )
+
+        logger.info(f"🏷️ Retrieved {len(category_ids)} category IDs: {category_ids}")
 
         categories = []
         if category_ids:
@@ -516,7 +529,9 @@ def get_products(current_user):
                 {'fields': ['id', 'name', 'complete_name', 'parent_id']}
             )
             categories = category_records
+            logger.info(f"📂 Categories: {[(c.get('id'), c.get('name'), c.get('complete_name')) for c in categories]}")
 
+        logger.info(f"✅ Returning {len(products)} products and {len(categories)} categories")
         return jsonify({
             'products': products,
             'categories': categories,
@@ -1485,39 +1500,58 @@ def create_order(current_user):
         else:
             # Compute the set of PTAV ids corresponding to selected variants
             ptav_ids = []
+            logger.info(f"🔍 Resolving variants for product_template_id={product_template_id}")
+            logger.info(f"📋 Selected variants: {selected_variants}")
+            
             for attribute_name, value_name in selected_variants.items():
                 attr_id = get_attribute_id(attribute_name)
                 if not attr_id:
                     return jsonify({'error': f"Unknown attribute: {attribute_name}"}), 400
+                logger.info(f"   ✓ Found attribute '{attribute_name}' -> ID {attr_id}")
+                
                 val_id = get_attribute_value_id(attr_id, value_name)
                 if not val_id:
                     return jsonify({'error': f"Unknown value '{value_name}' for attribute '{attribute_name}'"}), 400
+                logger.info(f"   ✓ Found value '{value_name}' -> ID {val_id}")
+                
                 ptav_id = get_ptav_id(product_template_id, val_id)
                 if not ptav_id:
                     return jsonify({'error': f"Option '{attribute_name}: {value_name}' not available for this product"}), 400
+                logger.info(f"   ✓ Found PTAV (Product Template Attribute Value) -> ID {ptav_id}")
                 ptav_ids.append(ptav_id)
 
             # Find candidate variants for the template, then pick the one containing all selected PTAVs
+            logger.info(f"🔎 Searching for candidate variants with PTAVs: {ptav_ids}")
             candidate_ids = models.execute_kw(
                 ODOO_DB, uid, ODOO_API_KEY,
                 'product.product', 'search',
                 [[('product_tmpl_id', '=', product_template_id)]],
             )
+            logger.info(f"📦 Found {len(candidate_ids)} candidate variants for this template")
+            
             if candidate_ids:
                 candidates = models.execute_kw(
                     ODOO_DB, uid, ODOO_API_KEY,
                     'product.product', 'read',
                     [candidate_ids],
-                    {'fields': ['product_template_attribute_value_ids']}
+                    {'fields': ['product_template_attribute_value_ids', 'display_name']}
                 )
                 needed = set(ptav_ids)
+                logger.info(f"🎯 Looking for a variant with PTAVs: {needed}")
+                
                 for c in candidates:
                     c_vals = set(c.get('product_template_attribute_value_ids', []))
+                    logger.info(f"   Candidate '{c.get('display_name')}' (ID {c['id']}) has PTAVs: {c_vals}")
                     if needed.issubset(c_vals):
+                        logger.info(f"   ✅ Match found! Using variant ID {c['id']}")
                         variant_product_id = c['id']
                         break
+                    else:
+                        missing = needed - c_vals
+                        logger.info(f"      ❌ Missing PTAVs: {missing}")
 
         if not variant_product_id:
+            logger.error(f"❌ Could not resolve product variant. Needed PTAVs: {ptav_ids}")
             return jsonify({'error': 'Could not resolve product variant for the selected options'}), 400
 
         # Create sale order
