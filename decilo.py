@@ -988,7 +988,7 @@ def get_order_details(current_user, order_id):
         models = get_odoo_models()
 
         # Read the order and verify it belongs to the current partner
-        order_fields = ['name', 'date_order', 'state', 'partner_id', 'x_studio_patient', 'order_line', 'amount_total', 'amount_tax', 'amount_untaxed']
+        order_fields = ['name', 'date_order', 'state', 'partner_id', 'x_studio_patient', 'order_line', 'amount_total', 'amount_tax', 'amount_untaxed', 'x_studio_notes']
         orders = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'sale.order', 'read',
@@ -1082,7 +1082,6 @@ def get_order_details(current_user, order_id):
         # Build response with partner data
         partner = None
         patient = None
-        patient_comment = None
         if order.get('partner_id'):
             pid = order['partner_id'][0]
             pname = order['partner_id'][1] if isinstance(order['partner_id'], (list, tuple)) and len(order['partner_id']) > 1 else None
@@ -1092,21 +1091,6 @@ def get_order_details(current_user, order_id):
             pat_id = p2[0] if isinstance(p2, (list, tuple)) else p2
             pat_name = p2[1] if isinstance(p2, (list, tuple)) and len(p2) > 1 else None
             patient = {'id': pat_id, 'name': pat_name}
-            # Read internal notes/comment from patient contact
-            try:
-                p_rec = models.execute_kw(
-                    ODOO_DB, uid, ODOO_API_KEY,
-                    'res.partner', 'read',
-                    [pat_id],
-                    {'fields': ['comment', 'x_studio_id_custom']}
-                )
-                if p_rec:
-                    patient_comment = (p_rec[0].get('comment') or '').strip() or None
-                    # Add custom ID if available
-                    if p_rec[0].get('x_studio_id_custom'):
-                        patient['customId'] = p_rec[0]['x_studio_id_custom']
-            except Exception:
-                patient_comment = None
 
         response = {
             'id': order['id'],
@@ -1119,8 +1103,12 @@ def get_order_details(current_user, order_id):
             'lines': detailed_lines,
             'partner': partner,
             'patient': patient,
-            'patient_comment': patient_comment
         }
+
+        # Read notes from Odoo
+        notes_field = 'x_studio_notes'
+        if notes_field in order:
+            response['notes'] = order[notes_field]
 
         return jsonify(response)
 
@@ -1595,6 +1583,9 @@ def create_order(current_user):
         # If we have a patient contact in Odoo, link it to the order's Studio field
         if patient_info and patient_info.get('id'):
             order_vals['x_studio_patient'] = patient_info['id']
+        # Store notes on the order level in x_studio_notes field
+        if notes:
+            order_vals['x_studio_notes'] = notes
 
         order_id = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
@@ -1701,30 +1692,6 @@ def create_order(current_user):
                 'subtype_xmlid': 'mail.mt_note',
                 }
             )
-
-        # If notes provided, persist them in the patient's Internal Notes field (technical: comment)
-        if patient_info and patient_info.get('id') and notes:
-            try:
-                # Read existing comment to append rather than overwrite blindly
-                existing = models.execute_kw(
-                    ODOO_DB, uid, ODOO_API_KEY,
-                    'res.partner', 'read',
-                    [patient_info['id']],
-                    {'fields': ['comment']}
-                )
-                previous_comment = ''
-                if existing and isinstance(existing, list):
-                    previous_comment = existing[0].get('comment') or ''
-
-                new_comment = f"{previous_comment}\n\n{notes}" if previous_comment else notes
-
-                models.execute_kw(
-                    ODOO_DB, uid, ODOO_API_KEY,
-                    'res.partner', 'write',
-                    [[patient_info['id']], {'comment': new_comment}]
-                )
-            except Exception as e:
-                logger.warning(f"Failed to write patient internal comment: {str(e)}")
 
         # Attach uploaded documents to the order and prepare patient binary field updates
         attachment_ids = []

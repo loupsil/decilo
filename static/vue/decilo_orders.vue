@@ -252,8 +252,8 @@
                     <span>Loading notes...</span>
                   </div>
                   <div v-else>
-                    <div v-if="selectedOrder.patient_comment" class="patient-notes-box">
-                      <div class="patient-notes-text" v-html="selectedOrder.patient_comment"></div>
+                    <div v-if="selectedOrder.notes" class="patient-notes-box">
+                      <div class="patient-notes-text" v-html="selectedOrder.notes"></div>
                     </div>
                     <div v-else class="section-empty">No notes</div>
                   </div>
@@ -396,13 +396,13 @@ export default {
         this.selectedOrderPartner = body?.partner || null
         this.selectedOrderPatient = body?.patient || null
         this.patientInfoLoading = false
-        // Merge patient_comment without changing object reference to avoid retriggering watcher
+        // Merge notes without changing object reference to avoid retriggering watcher
         if (this.selectedOrder && this.selectedOrder.id === orderId) {
-          const comment = body?.patient_comment || ''
+          const comment = body?.notes || ''
           if (this.$set) {
-            this.$set(this.selectedOrder, 'patient_comment', comment)
+            this.$set(this.selectedOrder, 'notes', comment)
           } else {
-            this.selectedOrder.patient_comment = comment
+            this.selectedOrder.notes = comment
           }
         }
         this.notesLoading = false
