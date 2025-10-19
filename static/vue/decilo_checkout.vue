@@ -1516,7 +1516,9 @@ export default {
 .form-group input::placeholder,
 .form-group textarea::placeholder {
   color: #64748b;
-  font-weight: 400;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* Highlight note for sending impressions */

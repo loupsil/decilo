@@ -16,28 +16,28 @@
             alt="Decilo Logo" 
             class="login-logo"
           >
-          <h2>B2Audio Portal</h2>
-          <p class="login-subtitle">Enter your credentials to access your account</p>
+          <h2>Portal for business customers</h2>
+          <p class="login-subtitle">Welcome to the new decilo expert world</p>
         </div>
         <form @submit.prevent="login" class="login-form">
           <div class="form-group">
-            <label for="email">Email address</label>
-            <input 
-              id="email"
-              type="email" 
-              v-model="email" 
-              placeholder="Enter your email address"
-              required
-              autocomplete="email"
-            >
+            <div class="input-wrapper">
+              <input
+                id="email"
+                type="email"
+                v-model="email"
+                placeholder="Enter your email address"
+                required
+                autocomplete="email"
+              >
+            </div>
           </div>
           <div class="form-group">
-            <label for="password">Password</label>
-            <div class="password-input-wrapper">
-              <input 
+            <div class="input-wrapper">
+              <input
                 id="password"
                 :type="showPassword ? 'text' : 'password'"
-                v-model="password" 
+                v-model="password"
                 placeholder="Enter your password"
                 required
                 autocomplete="current-password"
@@ -47,6 +47,10 @@
           <button type="submit" class="login-button">
             Sign In
           </button>
+          <p class="support-link">
+            Problème de connexion ? Contactez notre
+            <a href="mailto:support@decilo.be">support</a>
+          </p>
           <p v-if="error" class="error-message">{{ error }}</p>
         </form>
       </div>
@@ -297,8 +301,13 @@ export default {
   font-weight: 500;
 }
 
+.input-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
 .form-group input {
-  width: 100%;
+  width: 80%;
   padding: 12px 16px;
   background: #222222;
   border: 1px solid #333333;
@@ -315,7 +324,7 @@ export default {
 }
 
 .login-button {
-  width: 100%;
+  width: 60%;
   padding: 14px;
   background-color: #ffffff;
   color: #000000;
@@ -324,11 +333,36 @@ export default {
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  position: relative;
+  overflow: hidden;
 }
 
 .login-button:hover {
-  background-color: #f0f0f0;
+  background-color: #d0d0d0;
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+}
+
+.login-button:active {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.login-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transition: left 0.6s ease-out;
+}
+
+.login-button:hover::before {
+  left: 100%;
 }
 
 .error-message {
@@ -336,6 +370,25 @@ export default {
   font-size: 14px;
   margin-top: 16px;
   text-align: center;
+}
+
+.support-link {
+  font-size: 14px;
+  color: #888888;
+  text-align: center;
+  margin-top: 12px;
+}
+
+.support-link a {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.support-link a:hover {
+  color: #cccccc;
+  text-decoration: underline;
 }
 
 .dashboard {
@@ -397,7 +450,7 @@ export default {
 }
 
 .dashboard-logo {
-  height: 80%;
+  height: 60px;
   width: auto;
 }
 
