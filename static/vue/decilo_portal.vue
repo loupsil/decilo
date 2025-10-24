@@ -48,8 +48,7 @@
             Sign In
           </button>
           <p class="support-link">
-            Problème de connexion ? Contactez notre
-            <a href="mailto:support@decilo.be">support</a>
+            Having trouble signing in? Contact <a href="mailto:support@decilo.be">support@decilo.be</a>
           </p>
           <p v-if="error" class="error-message">{{ error }}</p>
         </form>
