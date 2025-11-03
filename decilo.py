@@ -1411,7 +1411,7 @@ def create_order(current_user):
                     ODOO_DB, uid, ODOO_API_KEY,
                     'res.partner', 'read',
                     [int(patient_id)],
-                    {'fields': ['id', 'name', 'email', 'phone']}
+                    {'fields': ['id', 'name', 'email', 'phone', 'x_studio_id_custom']}
                 )
                 if patient_records:
                     patient_info = patient_records[0]
@@ -1457,7 +1457,7 @@ def create_order(current_user):
                         ODOO_DB, uid, ODOO_API_KEY,
                         'res.partner', 'read',
                         [new_patient_id],
-                        {'fields': ['id', 'name', 'email', 'phone']}
+                        {'fields': ['id', 'name', 'email', 'phone', 'x_studio_id_custom']}
                     )[0]
 
                     patient_info = created_patient
@@ -1703,25 +1703,46 @@ def create_order(current_user):
             'right': None,
             'left': None
         }
+        # Determine patient custom ID (if available) for filename prefixing
+        patient_custom_id = None
+        if patient_info and patient_info.get('x_studio_id_custom'):
+            try:
+                patient_custom_id = str(patient_info.get('x_studio_id_custom'))
+            except Exception:
+                patient_custom_id = None
+
         for key in ['rightImpressionDoc', 'leftImpressionDoc']:
             file = files.get(key)
             if file and getattr(file, 'filename', None):
                 file_bytes = file.read()
                 if file_bytes:
                     datas_b64 = base64.b64encode(file_bytes).decode('ascii')
-                    # Keep a copy for contact binary fields
+                    # Derive side and suffix
                     if key == 'rightImpressionDoc':
-                        impression_b64_by_side['right'] = datas_b64
-                        impression_filename_by_side['right'] = file.filename
-                    elif key == 'leftImpressionDoc':
-                        impression_b64_by_side['left'] = datas_b64
-                        impression_filename_by_side['left'] = file.filename
+                        side = 'right'
+                        suffix = '_R'
+                    else:
+                        side = 'left'
+                        suffix = '_L'
+
+                    # Compute final filename: [custom_id_]originalBase+suffix+ext
+                    try:
+                        base, ext = os.path.splitext(file.filename)
+                        composed_base = f"{base}{suffix}"
+                        final_name = f"{patient_custom_id}_{composed_base}{ext}" if patient_custom_id else f"{composed_base}{ext}"
+                    except Exception:
+                        # Fallback to original filename if something goes wrong
+                        final_name = file.filename
+
+                    # Keep a copy for contact binary fields and filenames
+                    impression_b64_by_side[side] = datas_b64
+                    impression_filename_by_side[side] = final_name
                     # Create attachment on sale order
                     att_id = models.execute_kw(
                         ODOO_DB, uid, ODOO_API_KEY,
                         'ir.attachment', 'create',
                         [{
-                            'name': file.filename,
+                            'name': final_name,
                             'res_model': 'sale.order',
                             'res_id': order_id,
                             'type': 'binary',
