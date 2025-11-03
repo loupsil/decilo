@@ -1302,6 +1302,176 @@ def get_order_ear_impressions(current_user, order_id: int):
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
 
+@decilo_bp.route('/decilo-api/products/<int:product_id>/variant-exclusions', methods=['GET'])
+@token_required
+def get_product_variant_exclusions(current_user, product_id: int):
+    """Return forbidden combinations grouped by the PTAV that declares exclusions.
+
+    Output shape:
+    {
+      "product_id": <template_id>,
+      "exclusions": [
+        { "value": "<PTAV base value name>", "excluded_values": ["<name>", "<name>", ...] },
+        ...
+      ]
+    }
+    """
+    logger.info(f"Received request for /decilo-api/products/{product_id}/variant-exclusions")
+    try:
+        uid = get_uid()
+        models = get_odoo_models()
+
+        # Find all product.template.attribute.value (PTAV) for this template to get exclusion record ids
+        ptav_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template.attribute.value', 'search',
+            [[('product_tmpl_id', '=', product_id)]],
+            {'order': 'id asc'}
+        )
+
+        if not ptav_ids:
+            return jsonify({'product_id': product_id, 'exclusions': []})
+
+        ptavs = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template.attribute.value', 'read',
+            [ptav_ids],
+            {'fields': ['exclude_for', 'product_attribute_value_id']}
+        )
+        exclusion_ids = set()
+        ptav_base_pav_ids = []
+        for r in ptavs:
+            for eid in (r.get('exclude_for') or []):
+                exclusion_ids.add(eid)
+            pav = r.get('product_attribute_value_id')
+            pav_id = pav[0] if isinstance(pav, (list, tuple)) else pav
+            if pav_id:
+                ptav_base_pav_ids.append(pav_id)
+        if not exclusion_ids:
+            return jsonify({'product_id': product_id, 'exclusions': []})
+
+        # Read exclusion records to get the value_ids involved per exclusion
+        exclusions_raw = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template.attribute.exclusion', 'read',
+            [list(exclusion_ids)],
+            {'fields': ['product_tmpl_id', 'value_ids']}
+        )
+        # Keep only exclusions for this product template to avoid cross-template mixups
+        ex_by_id = {}
+        for ex in exclusions_raw or []:
+            tmpl = ex.get('product_tmpl_id')
+            tmpl_id = tmpl[0] if isinstance(tmpl, (list, tuple)) else tmpl
+            if tmpl_id == product_id:
+                ex_by_id[ex.get('id')] = ex
+        # Resolve names for base PAVs (declaring PTAVs' own PAV)
+        base_pav_meta = {}
+        if ptav_base_pav_ids:
+            base_pavs = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.attribute.value', 'read',
+                [list(set(ptav_base_pav_ids))],
+                {'fields': ['name']}
+            ) or []
+            base_pav_meta = {v['id']: v.get('name') for v in base_pavs}
+
+        # Collect all ids inside exclusion value_ids to resolve to names
+        all_value_ids = set()
+        for ex in ex_by_id.values():
+            vids = ex.get('value_ids') or []
+            for vid in vids:
+                all_value_ids.add(vid if isinstance(vid, int) else (vid[0] if isinstance(vid, (list, tuple)) else None))
+        all_value_ids = {vid for vid in all_value_ids if vid}
+
+        # Build mapping prefering PTAV->PAV name resolution to avoid cross-model id collisions
+        pav_name_by_id = {}
+        ptav_to_pav = {}
+        if all_value_ids:
+            # First attempt: treat all ids as PTAV ids
+            ptav_read = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.template.attribute.value', 'read',
+                [list(all_value_ids)],
+                {'fields': ['product_attribute_value_id']}
+            ) or []
+            pav_ids_from_ptav = []
+            for r in ptav_read:
+                pav = r.get('product_attribute_value_id')
+                pav_id = pav[0] if isinstance(pav, (list, tuple)) else pav
+                if pav_id:
+                    ptav_to_pav[r['id']] = pav_id
+                    pav_ids_from_ptav.append(pav_id)
+            # Read names for PAV ids gathered via PTAV
+            if pav_ids_from_ptav:
+                pavs_from_ptav = models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'product.attribute.value', 'read',
+                    [list(set(pav_ids_from_ptav))],
+                    {'fields': ['name']}
+                ) or []
+                for v in pavs_from_ptav:
+                    pav_name_by_id[v['id']] = v.get('name')
+
+            # Fallback: any ids not present as PTAV keys might actually be direct PAV ids
+            unresolved_ids = [vid for vid in all_value_ids if vid not in ptav_to_pav]
+            if unresolved_ids:
+                pavs_direct = models.execute_kw(
+                    ODOO_DB, uid, ODOO_API_KEY,
+                    'product.attribute.value', 'read',
+                    [unresolved_ids],
+                    {'fields': ['name']}
+                ) or []
+                for v in pavs_direct:
+                    pav_name_by_id[v['id']] = v.get('name')
+
+        # Build grouped exclusions: value (base) -> excluded value names
+        result_exclusions = []
+        # Create helper: given id that may be PAV or PTAV, resolve name
+        def resolve_value_name(unknown_id):
+            # If it's a PTAV id, map to PAV and resolve name
+            pav = ptav_to_pav.get(unknown_id)
+            if pav:
+                return pav_name_by_id.get(pav)
+            # Else, treat as direct PAV id
+            return pav_name_by_id.get(unknown_id)
+
+        # For each PTAV that declares exclusions, map to its base PAV name
+        for r in ptavs:
+            ex_ids = r.get('exclude_for') or []
+            if not ex_ids:
+                continue
+            pav = r.get('product_attribute_value_id')
+            pav_id = pav[0] if isinstance(pav, (list, tuple)) else pav
+            base_name = base_pav_meta.get(pav_id)
+            if not base_name:
+                continue
+            excluded_names = []
+            for ex_id in ex_ids:
+                # find corresponding exclusion record
+                ex_rec = ex_by_id.get(ex_id)
+                if not ex_rec:
+                    continue
+                for vid in (ex_rec.get('value_ids') or []):
+                    norm_vid = vid if isinstance(vid, int) else (vid[0] if isinstance(vid, (list, tuple)) else None)
+                    name = resolve_value_name(norm_vid) if norm_vid else None
+                    if name:
+                        excluded_names.append(name)
+            # unique and keep order
+            seen = set()
+            dedup = []
+            for n in excluded_names:
+                if n not in seen:
+                    seen.add(n)
+                    dedup.append(n)
+            result_exclusions.append({'value': base_name, 'excluded_values': dedup})
+        logger.info(f"Result exclusions: {result_exclusions}")
+        return jsonify({'product_id': product_id, 'exclusions': result_exclusions})
+
+    except Exception as e:
+        error_msg = f"Error fetching variant exclusions for product {product_id}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
 @decilo_bp.route('/decilo-api/orders/<int:order_id>/ear-impressions/download', methods=['GET'])
 @token_required
 def download_order_ear_impression(current_user, order_id: int):

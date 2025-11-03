@@ -64,7 +64,8 @@
                       v-for="value in variant.values"
                       :key="value"
                       class="variant-btn"
-                      :class="{ active: isSelectedVariant(variant.attribute, value) }"
+                      :class="{ active: isSelectedVariant(variant.attribute, value), disabled: isServerValueDisabled(variant.attribute, value) }"
+                      :disabled="isServerValueDisabled(variant.attribute, value)"
                       @click="selectVariant(variant.attribute, value)"
                     >
                       {{ value }}
@@ -72,6 +73,7 @@
                   </div>
                 </div>
               </div>
+              
             </div>
           </div>
 
@@ -465,7 +467,7 @@
           <button
             v-if="orderStep < 4"
             class="order-btn large"
-            :disabled="isSubmittingOrder"
+            :disabled="isSubmittingOrder || (orderStep === 0 && isForbiddenByServer)"
             @click="nextStep"
           >
             <div v-if="orderStep === 3 && isSubmittingOrder" class="button-loader">
@@ -540,6 +542,10 @@ export default {
       earImpressionsError: '',
       preloadedLeftDoc: null, // Pre-loaded document from existing patient
       preloadedRightDoc: null, // Pre-loaded document from existing patient
+      // Server-side variant exclusions for the selected product
+      variantExclusions: [],
+      variantExclusionsLoading: false,
+      variantExclusionsError: '',
     }
   },
   computed: {
@@ -617,6 +623,22 @@ export default {
         !(variant.attribute === 'Ear Impression Type' ||
           variant.attribute.toLowerCase().includes('ear impression'))
       )
+    },
+
+    // Flatten current selected values to names array
+    selectedValueNames() {
+      const vals = Object.values(this.selectedVariants || {})
+      return vals.filter(v => typeof v === 'string' && v.trim().length > 0)
+    },
+
+    // True if the current selected variant combination matches any server-declared exclusion by name
+    isForbiddenByServer() {
+      try {
+        if (!this.selectedProduct || !Array.isArray(this.variantExclusions) || this.variantExclusions.length === 0) return false
+        return this.checkForbiddenForValues(this.selectedValueNames)
+      } catch (_) {
+        return false
+      }
     }
   },
   watch: {
@@ -625,6 +647,7 @@ export default {
         if (newProduct) {
           this.resetOrderForm();
           this.fetchPatientContacts();
+          this.fetchVariantExclusions();
         }
       },
       immediate: true
@@ -649,6 +672,40 @@ export default {
     }
   },
   methods: {
+    // Disable an option if selecting it with current selection would complete a forbidden exclusion group (string matching)
+    isServerValueDisabled(attribute, valueName) {
+      try {
+        if (!this.selectedProduct || !Array.isArray(this.variantExclusions) || this.variantExclusions.length === 0) return false
+        const names = this.selectedValueNames.slice()
+        // Replace current attribute's selected value (if any) with candidate valueName
+        const current = this.selectedVariants && this.selectedVariants[attribute]
+        if (current) {
+          const idx = names.indexOf(current)
+          if (idx >= 0) names.splice(idx, 1)
+        }
+        names.push(valueName)
+        return this.checkForbiddenForValues(names)
+      } catch (_) {
+        return false
+      }
+    },
+    // Returns true if any exclusion has both its base value and any of its excluded_values present in provided names
+    checkForbiddenForValues(names) {
+      try {
+        if (!Array.isArray(names) || names.length === 0) return false
+        for (const ex of this.variantExclusions || []) {
+          const base = ex && ex.value
+          const excluded = Array.isArray(ex && ex.excluded_values) ? ex.excluded_values : []
+          if (!base || excluded.length === 0) continue
+          if (names.includes(base) && excluded.some(n => names.includes(n))) {
+            return true
+          }
+        }
+        return false
+      } catch (_) {
+        return false
+      }
+    },
     handleBack() {
       if (this.orderStep === 0) {
         this.closeModal();
@@ -684,6 +741,11 @@ export default {
     nextStep() {
       // Initialize clientType when moving from Product -> Patient Information
       if (this.orderStep === 0) {
+        // Block if forbidden combination based on server exclusions
+        if (this.isForbiddenByServer) {
+          this.$emit('show-error', { message: 'This combination of options is not available for this product.', type: 'error' })
+          return
+        }
         this.clientType = null
       }
 
@@ -761,6 +823,29 @@ export default {
         }
       }
       return ''
+    },
+
+    async fetchVariantExclusions() {
+      try {
+        this.variantExclusionsLoading = true
+        this.variantExclusionsError = ''
+        this.variantExclusions = []
+        const token = localStorage.getItem('decilo_token')
+        if (!token || !this.selectedProduct?.id) return
+        const res = await fetch(`/decilo-api/products/${encodeURIComponent(this.selectedProduct.id)}/variant-exclusions`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          this.variantExclusionsError = body?.error || 'Failed to load exclusions'
+          return
+        }
+        this.variantExclusions = Array.isArray(body?.exclusions) ? body.exclusions : []
+      } catch (e) {
+        this.variantExclusionsError = 'Failed to load exclusions'
+      } finally {
+        this.variantExclusionsLoading = false
+      }
     },
 
     async submitOrder() {
@@ -2192,6 +2277,24 @@ export default {
   color: #ffffff;
   border-color: #444444;
 }
+
+.variant-btn.disabled,
+.variant-btn:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #555555;
+  color: #9ca3af; /* muted */
+  opacity: 0.7;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}
+
+.variant-btn:disabled:hover,
+.variant-btn.disabled:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Orange warning for forbidden combinations */
+/* removed orange warning styles */
 
 /* Ear Impression Type Section */
 .ear-impression-type-section {
