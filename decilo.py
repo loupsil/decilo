@@ -404,7 +404,6 @@ class OdooXMLRPCClient(OdooClient):
                 [product['attribute_line_ids']],
                 {'fields': ['attribute_id', 'value_ids']}
             )
-            
             variants = []
             for line in attr_lines:
                 # Get attribute values
