@@ -401,7 +401,7 @@ class OdooXMLRPCClient(OdooClient):
         
         # If product has attribute lines, get the variants information
         if product.get('attribute_line_ids'):
-            # Get attribute lines details
+            # Get attribute lines details in one call
             attr_lines = models.execute_kw(
                 self.db, uid, self.api_key,
                 'product.template.attribute.line',
@@ -409,20 +409,29 @@ class OdooXMLRPCClient(OdooClient):
                 [product['attribute_line_ids']],
                 {'fields': ['attribute_id', 'value_ids']}
             )
-            variants = []
+
+            # Collect all value_ids to batch fetch values once
+            all_value_ids = []
             for line in attr_lines:
-                # Get attribute values
-                values = models.execute_kw(
+                all_value_ids.extend(line.get('value_ids', []))
+            unique_value_ids = list(set(all_value_ids))
+
+            values_by_id = {}
+            if unique_value_ids:
+                value_records = models.execute_kw(
                     self.db, uid, self.api_key,
                     'product.attribute.value',
                     'read',
-                    [line['value_ids']],
+                    [unique_value_ids],
                     {'fields': ['name']}
                 )
-                
+                values_by_id = {rec['id']: rec['name'] for rec in value_records}
+
+            variants = []
+            for line in attr_lines:
                 variants.append({
                     'attribute': line['attribute_id'][1],  # [1] contains the name
-                    'values': [val['name'] for val in values]
+                    'values': [values_by_id[val_id] for val_id in line.get('value_ids', []) if val_id in values_by_id]
                 })
             
             # Add variants to product data
