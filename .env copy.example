@@ -1,0 +1,4 @@
+DECILO_ODOO_API_KEY = 7b135fa6adb3eab29631ff98a3ab705ff1bdf772
+DECILO_ODOO_URL = https://decilo.odoo.com
+DECILO_ODOO_DB = decilo
+DECILO_ODOO_USERNAME = louisdresse@gmail.com 

@@ -131,6 +131,8 @@ export default {
       showPassword: false,
       isLoading: false,
       showProfileMenu: false,
+      isSignupMode: false,
+      isPasswordResetMode: false,
       customerInfo: {
         name: '',
         email: '',

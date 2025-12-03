@@ -7,6 +7,7 @@ import jwt
 from datetime import datetime, timedelta
 from functools import wraps
 import base64
+import imghdr
 import json
 
 #  Configure logging
@@ -290,14 +291,26 @@ class OdooXMLRPCClient(OdooClient):
             self._models = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object', allow_none=True)
         return self._models
     
-    def search_products(self, domain=None, fields=None, offset=0, limit=None, order=None):
+    def search_products(self, domain=None, fields=None, offset=0, limit=None, order=None, include_variants=False):
         uid = self.authenticate()
         models = self._get_models()
         
         if domain is None:
             domain = []
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
+            # Skinny payload for list view; images are fetched separately
+            fields = [
+                'name',
+                'list_price',
+                'default_code',
+                'categ_id',
+                'description_sale',
+                'x_studio_is_published_b2audio'
+            ]
+            if include_variants:
+                fields.append('attribute_line_ids')
+        elif include_variants and 'attribute_line_ids' not in fields:
+            fields.append('attribute_line_ids')
             
         # First get product IDs
         product_ids = models.execute_kw(
@@ -324,38 +337,39 @@ class OdooXMLRPCClient(OdooClient):
             {'fields': fields}
         )
         
-        # Add variant information for each product
+        if not include_variants:
+            return products
+
+        # Add variant information for each product when requested
         for product in products:
-            if product.get('attribute_line_ids'):
-                # Get attribute lines details
-                attr_lines = models.execute_kw(
+            if not product.get('attribute_line_ids'):
+                product['variants'] = []
+                continue
+
+            attr_lines = models.execute_kw(
+                self.db, uid, self.api_key,
+                'product.template.attribute.line',
+                'read',
+                [product['attribute_line_ids']],
+                {'fields': ['attribute_id', 'value_ids']}
+            )
+            
+            variants = []
+            for line in attr_lines:
+                values = models.execute_kw(
                     self.db, uid, self.api_key,
-                    'product.template.attribute.line',
+                    'product.attribute.value',
                     'read',
-                    [product['attribute_line_ids']],
-                    {'fields': ['attribute_id', 'value_ids']}
+                    [line['value_ids']],
+                    {'fields': ['name']}
                 )
                 
-                variants = []
-                for line in attr_lines:
-                    # Get attribute values
-                    values = models.execute_kw(
-                        self.db, uid, self.api_key,
-                        'product.attribute.value',
-                        'read',
-                        [line['value_ids']],
-                        {'fields': ['name']}
-                    )
-                    
-                    variants.append({
-                        'attribute': line['attribute_id'][1],  # [1] contains the name
-                        'values': [val['name'] for val in values]
-                    })
-                
-                # Add variants to product data
-                product['variants'] = variants
-            else:
-                product['variants'] = []
+                variants.append({
+                    'attribute': line['attribute_id'][1],  # [1] contains the name
+                    'values': [val['name'] for val in values]
+                })
+            
+            product['variants'] = variants
         
         return products
     
@@ -458,6 +472,45 @@ class OdooXMLRPCClient(OdooClient):
             
         return variants
 
+    def _image_field_for_size(self, size):
+        """Map friendly size name to Odoo image field"""
+        size_map = {
+            'thumb': 'image_256',
+            'small': 'image_512',
+            'medium': 'image_512',
+            'large': 'image_1024',
+            'full': 'image_1920',
+            'original': 'image_1920'
+        }
+        return size_map.get(size, 'image_512')
+
+    def get_product_images(self, product_ids, size='medium'):
+        """Fetch images for a list of product IDs, preserving input order"""
+        if not product_ids:
+            return []
+
+        uid = self.authenticate()
+        models = self._get_models()
+        size_field = self._image_field_for_size(size)
+
+        records = models.execute_kw(
+            self.db, uid, self.api_key,
+            'product.template',
+            'read',
+            [product_ids],
+            {'fields': [size_field]}
+        )
+
+        # Map by id to rebuild in requested order
+        by_id = {rec['id']: rec.get(size_field) for rec in records}
+        images = []
+        for pid in product_ids:
+            images.append({
+                'id': pid,
+                'image': by_id.get(pid)
+            })
+        return images
+
 # Initialize the Odoo client
 odoo_client = OdooXMLRPCClient(ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_API_KEY)
 
@@ -541,6 +594,67 @@ def get_products(current_user):
 
     except Exception as e:
         error_msg = f"Error fetching products: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
+
+@decilo_bp.route('/decilo-api/product-images', methods=['GET'])
+@token_required
+def get_product_images_endpoint(current_user):
+    """
+    Fetch images for a list of product IDs in the order provided.
+    Query params:
+      - ids: comma-separated product IDs (required)
+      - size: thumb | small | medium | large | full | original (default: medium)
+    """
+    try:
+        ids_param = request.args.get('ids')
+        size = request.args.get('size', 'medium')
+
+        if not ids_param:
+            return jsonify({'error': 'ids query parameter is required'}), 400
+
+        try:
+            product_ids = [int(pid) for pid in ids_param.split(',') if pid.strip()]
+        except ValueError:
+            return jsonify({'error': 'ids must be comma-separated integers'}), 400
+
+        if not product_ids:
+            return jsonify({'error': 'ids must contain at least one product id'}), 400
+
+        images = odoo_client.get_product_images(product_ids, size=size)
+        return jsonify({
+            'size': size,
+            'count': len(images),
+            'images': images
+        })
+
+    except Exception as e:
+        error_msg = f"Error fetching product images: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
+
+@decilo_bp.route('/decilo-api/products/<int:product_id>/image', methods=['GET'])
+@token_required
+def get_product_image(current_user, product_id):
+    """Fetch a single product image at the requested size"""
+    try:
+        size = request.args.get('size', 'medium')
+        images = odoo_client.get_product_images([product_id], size=size)
+        image_data = images[0]['image'] if images else None
+
+        if not image_data:
+            return jsonify({'error': 'Image not found', 'code': 'not_found'}), 404
+
+        binary = base64.b64decode(image_data)
+        image_type = imghdr.what(None, h=binary) or 'png'
+        mimetype = f'image/{image_type}'
+
+        return Response(binary, mimetype=mimetype)
+
+    except Exception as e:
+        error_msg = f"Error fetching image for product {product_id}: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
