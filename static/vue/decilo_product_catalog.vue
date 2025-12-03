@@ -171,7 +171,7 @@ export default {
       selectedProduct: null,
       isLoading: false,
       currentPage: 1,
-      itemsPerPage: 12,
+      itemsPerPage: 20,
       totalProducts: 0,
       searchTimeout: null,
       selectedVariants: {},
@@ -216,7 +216,7 @@ export default {
       return JSON.stringify({
         searchQuery: this.searchQuery || '',
         currentPage: this.currentPage || 1,
-        itemsPerPage: this.itemsPerPage || 12,
+        itemsPerPage: this.itemsPerPage || 20,
         selectedCategories: this.selectedCategories || []
       })
     },
@@ -331,12 +331,20 @@ export default {
         this.totalProducts = data.total
 
         // Use categories from API response instead of extracting from products
-        this.categories = (data.categories || []).map(category => ({
-          id: category.id,
-          name: category.name, // Use short name for cleaner display
-          completeName: category.complete_name,
-          parentId: category.parent_id ? category.parent_id[0] : null
-        }))
+        this.categories = (data.categories || []).map(category => {
+          // Extract short name from full category path (e.g., "Goods / Ear Tips" -> "Ear Tips")
+          // This must match the format used for product.category to enable filtering
+          const fullCategoryName = category.complete_name || category.name || 'Uncategorized'
+          const shortCategoryName = fullCategoryName.includes(' / ') ?
+            fullCategoryName.split(' / ').pop() : fullCategoryName
+          
+          return {
+            id: category.id,
+            name: shortCategoryName, // Use short name to match product.category format
+            completeName: category.complete_name,
+            parentId: category.parent_id ? category.parent_id[0] : null
+          }
+        })
 
         console.log('✅ Products loaded successfully:', {
           displayedProducts: this.products.length,
