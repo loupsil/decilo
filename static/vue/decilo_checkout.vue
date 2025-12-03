@@ -44,6 +44,10 @@
           <div v-if="orderStep === 0" class="order-step">
             <h2>{{ selectedProduct.name }}</h2>
             <p class="full-description">{{ selectedProduct.full_description }}</p>
+            <div v-if="isDetailLoading" class="detail-loading">
+              <div class="loading-spinner-small"></div>
+              <span>Loading options...</span>
+            </div>
             <div v-if="selectedProduct.specifications && selectedProduct.specifications.length > 0" class="specifications">
               <h3>Specifications</h3>
               <ul>
@@ -512,6 +516,10 @@ export default {
     selectedProduct: {
       type: Object,
       default: null
+    },
+    isDetailLoading: {
+      type: Boolean,
+      default: false
     },
     selectedVariants: {
       type: Object,
@@ -2197,6 +2205,14 @@ export default {
   color: #888888;
   line-height: 1.6;
   margin-bottom: 20px;
+}
+
+.detail-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  color: #94a3b8;
 }
 
 .specifications {

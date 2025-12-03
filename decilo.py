@@ -305,6 +305,7 @@ class OdooXMLRPCClient(OdooClient):
                 'default_code',
                 'categ_id',
                 'description_sale',
+                'description_ecommerce',
                 'x_studio_is_published_b2audio'
             ]
             if include_variants:
@@ -373,12 +374,16 @@ class OdooXMLRPCClient(OdooClient):
         
         return products
     
-    def read_product(self, product_id, fields=None):
+    def read_product(self, product_id, fields=None, include_image=True):
         uid = self.authenticate()
         models = self._get_models()
 
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
+            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
+            if include_image:
+                fields.append('image_1920')
+        elif not include_image and 'image_1920' in fields:
+            fields = [f for f in fields if f != 'image_1920']
             
         # First get the product with basic fields and attribute lines
         product = models.execute_kw(
@@ -662,7 +667,10 @@ def get_product_image(current_user, product_id):
 def get_product(current_user, product_id):
     """Get detailed information about a specific product"""
     try:
-        product = odoo_client.read_product(product_id)
+        include_image_param = request.args.get('include_image', 'true').lower()
+        include_image = include_image_param not in ['false', '0', 'no']
+
+        product = odoo_client.read_product(product_id, include_image=include_image)
         
         if not product:
             return jsonify({'error': 'Product not found', 'code': 'not_found'}), 404

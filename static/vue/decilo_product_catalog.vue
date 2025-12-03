@@ -149,6 +149,7 @@
       @go-to-orders="viewOrders"
       @show-error="$emit('show-error', $event)"
       @token-expired="$emit('token-expired')"
+      :isDetailLoading="isDetailLoading"
     />
   </div>
 </template>
@@ -191,12 +192,12 @@ export default {
       isLoading: false,
       currentPage: 1,
       itemsPerPage: 20,
-      // use thumbs for grid hydration; detail view can request larger sizes
-      imageSize: "thumb",
+      imageSize: "medium",
       totalProducts: 0,
       searchTimeout: null,
       selectedVariants: {},
       selectedCategories: [],
+      isDetailLoading: false,
     };
   },
   computed: {
@@ -418,7 +419,7 @@ export default {
           categories: this.categories.map((c) => c.name),
         });
 
-        // Fetch images for the current page in order of appearance (thumbs for speed)
+        // Fetch images for the current page in order of appearance
         await this.fetchImagesForProducts(
           this.paginatedProducts.map((p) => p.id),
           this.imageSize
@@ -451,7 +452,7 @@ export default {
       }
     },
 
-    async fetchImagesForProducts(productIds, size = "thumb") {
+    async fetchImagesForProducts(productIds, size = "medium") {
       if (!productIds || productIds.length === 0) return;
 
       const token = localStorage.getItem("decilo_token");
@@ -480,10 +481,7 @@ export default {
         const byId = {};
         data.images.forEach((img) => {
           if (img.image) {
-            const objectUrl = this.base64ToObjectUrl(img.image, "image/png");
-            if (objectUrl) {
-              byId[img.id] = objectUrl;
-            }
+            byId[img.id] = `data:image/png;base64,${img.image}`;
           }
         });
 
@@ -566,17 +564,89 @@ export default {
       this.currentPage = 1; // Reset to first page when changing category selection
     },
 
-    showProductDetails(product) {
+    async showProductDetails(product) {
+      // Always start with the list product while we hydrate details
       this.selectedProduct = product;
-      // Reset selected variants when showing a new product
       this.selectedVariants = {};
+      this.isDetailLoading = true;
 
-      // Hydrate a larger image for detail view
-      this.fetchImagesForProducts([product.id], "medium");
+      // Fetch full product detail (variants) on demand without blocking on full image
+      try {
+        const token = localStorage.getItem("decilo_token");
+        if (!token) {
+          console.warn("❌ No auth token found - cannot fetch product detail");
+          return;
+        }
+
+        const response = await fetch(
+          `/decilo-api/products/${product.id}?include_image=false`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          console.warn("⚠️ Failed to fetch product detail", response.status);
+          return;
+        }
+
+        const detail = await response.json();
+        // Merge detail into current selection but keep existing image until we fetch full image separately
+        this.selectedProduct = {
+          ...product,
+          ...detail,
+          image_url: product.image_url || "/static/images/product-placeholder.jpg",
+        };
+
+        // Pre-select first value of each variant if available, except Ear Impression Type
+        if (this.selectedProduct?.variants) {
+          this.selectedProduct.variants.forEach((variant) => {
+            if (
+              variant.values &&
+              variant.values.length > 0 &&
+              variant.attribute !== "Ear Impression Type" &&
+              !variant.attribute.toLowerCase().includes("ear impression")
+            ) {
+              this.selectedVariants[variant.attribute] = variant.values[0];
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("⚠️ Error fetching product detail", err);
+      }
+      finally {
+        this.isDetailLoading = false;
+      }
+
+      // Fetch medium first (if needed) then upgrade to full resolution
+      try {
+        await this.fetchImagesForProducts([product.id], "medium");
+        const updated = this.products.find((p) => p.id === product.id);
+        if (updated?.image_url) {
+          this.selectedProduct = {
+            ...this.selectedProduct,
+            image_url: updated.image_url,
+          };
+        }
+
+        await this.fetchImagesForProducts([product.id], "full");
+        const updatedFull = this.products.find((p) => p.id === product.id);
+        if (updatedFull?.image_url) {
+          this.selectedProduct = {
+            ...this.selectedProduct,
+            image_url: updatedFull.image_url,
+          };
+        }
+      } catch (err) {
+        console.warn("⚠️ Error fetching full image", err);
+      }
 
       // Pre-select first value of each variant if available, except Ear Impression Type
-      if (product.variants) {
-        product.variants.forEach((variant) => {
+      if (this.selectedProduct?.variants) {
+        this.selectedProduct.variants.forEach((variant) => {
           if (
             variant.values &&
             variant.values.length > 0 &&
@@ -587,11 +657,6 @@ export default {
           }
         });
       }
-    },
-
-    closeModal() {
-      this.selectedProduct = null;
-      this.selectedVariants = {};
     },
 
     isSelectedVariant(attribute, value) {
