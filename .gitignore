@@ -5,3 +5,5 @@
 *.pyc
 __pycache__/
 test.py
+.env*.example
+.env copy.example
