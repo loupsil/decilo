@@ -40,6 +40,22 @@ VARIANT_IMAGE_CACHE_TTL = 30 * 60
 VARIANT_TEMPLATE_CACHE = {}
 VARIANT_IMAGE_CACHE = {}
 
+# Language mapping helpers
+UI_TO_ODOO_LANG = {
+    'en': 'en_US',
+    'fr': 'fr_FR',
+    'nl': 'nl_NL',
+}
+
+ODOO_TO_UI_LANG = {
+    'en_US': 'en',
+    'en_GB': 'en',
+    'fr_FR': 'fr',
+    'fr_BE': 'fr',
+    'nl_NL': 'nl',
+    'nl_BE': 'nl',
+}
+
 def create_token(user_data):
     """Create a JWT token for the user"""
     try:
@@ -151,14 +167,15 @@ def customer_login():
                 'res.users',
                 'read',
                 [auth_uid],
-                {'fields': ['name', 'email', 'partner_id']}
+                {'fields': ['name', 'email', 'partner_id', 'lang']}
             )[0]
 
             # Create user data
             user_data = {
                 'id': user['partner_id'][0],
                 'name': user['name'],
-                'email': user['email'] or email
+                'email': user['email'] or email,
+                'lang': user.get('lang')
             }
 
             # Create JWT token
@@ -177,6 +194,7 @@ def customer_login():
         error_msg = f"Error in customer login: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
 
 @decilo_bp.route('/decilo-api/customer-signup', methods=['POST'])
 def customer_signup():
