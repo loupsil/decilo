@@ -36,7 +36,17 @@
       </div>
       <div class="modal-product-details">
         <div class="modal-product-image">
-          <img :src="selectedProduct.image_url" :alt="selectedProduct.name">
+          <div class="image-frame" :class="{ 'is-loading': isImageLoading }">
+            <img
+              :src="activeImageUrl || selectedProduct.image_url"
+              :alt="selectedProduct.name"
+              @load="onImageLoaded"
+              @error="onImageError"
+            >
+            <div v-if="isImageLoading" class="image-loading-overlay">
+              <div class="loading-spinner-large"></div>
+            </div>
+          </div>
         </div>
         <div class="modal-product-info">
 
@@ -554,6 +564,11 @@ export default {
       variantExclusions: [],
       variantExclusionsLoading: false,
       variantExclusionsError: '',
+      activeImageUrl: '/static/images/product-placeholder.jpg',
+      isImageLoading: false,
+      activeImageRequestId: 0,
+      imageRequestId: 0,
+      lastImageVariantKey: '',
     }
   },
   computed: {
@@ -653,14 +668,32 @@ export default {
     selectedProduct: {
       handler(newProduct) {
         if (newProduct) {
+          this.imageRequestId += 1;
+          this.activeImageUrl = newProduct.image_url || '/static/images/product-placeholder.jpg';
+          this.activeImageRequestId = this.imageRequestId;
+          this.isImageLoading = false;
+          this.lastImageVariantKey = '';
           this.resetOrderForm();
           this.fetchPatientContacts();
           this.fetchVariantExclusions();
+          this.refreshVariantImage();
+        } else {
+          this.activeImageUrl = '/static/images/product-placeholder.jpg';
+          this.activeImageRequestId = this.imageRequestId;
+          this.isImageLoading = false;
+          this.lastImageVariantKey = '';
         }
       },
       immediate: true
     }
     ,
+
+    selectedVariants: {
+      handler() {
+        this.refreshVariantImage();
+      },
+      deep: true
+    },
 
 
     orderStep(newVal) {
@@ -971,6 +1004,87 @@ export default {
     closeModal() {
       this.$emit('close');
       this.resetOrderForm();
+    },
+
+    async refreshVariantImage() {
+      if (!this.selectedProduct) return
+      const fallback = this.selectedProduct.image_url || '/static/images/product-placeholder.jpg'
+      const selections = this.selectedVariants || {}
+      const hasSelections = Object.keys(selections).length > 0
+      if (!this.selectedProduct?.id) {
+        this.activeImageUrl = fallback
+        this.isImageLoading = false
+        this.activeImageRequestId = this.imageRequestId
+        return
+      }
+
+      if (!hasSelections) {
+        this.activeImageUrl = fallback
+        this.isImageLoading = false
+        this.activeImageRequestId = this.imageRequestId
+        return
+      }
+
+      // Avoid duplicate requests for the same selection set
+      const key = `${this.selectedProduct.id}::${JSON.stringify(Object.entries(selections).sort())}`
+      if (key === this.lastImageVariantKey) {
+        return
+      }
+
+      const token = localStorage.getItem('decilo_token')
+      if (!token) {
+        this.activeImageUrl = fallback
+        this.isImageLoading = false
+        this.activeImageRequestId = this.imageRequestId
+        return
+      }
+
+      const requestId = ++this.imageRequestId
+      this.isImageLoading = true
+      try {
+        const res = await fetch(`/decilo-api/products/${encodeURIComponent(this.selectedProduct.id)}/variant-image`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ selected_variants: selections, size: 'full' })
+        })
+        if (!res.ok) {
+          throw new Error(`Variant image request failed with status ${res.status}`)
+        }
+        const data = await res.json()
+        if (requestId !== this.imageRequestId) return
+        const nextImage = data?.image || fallback
+        this.activeImageUrl = nextImage || fallback
+        this.activeImageRequestId = requestId
+        this.lastImageVariantKey = key
+      } catch (error) {
+        console.warn('Variant image load failed', error)
+        if (requestId !== this.imageRequestId) return
+        this.activeImageUrl = fallback
+        this.activeImageRequestId = requestId
+        this.lastImageVariantKey = key
+      } finally {
+        if (requestId === this.imageRequestId) {
+          this.isImageLoading = false
+        }
+      }
+    },
+
+    onImageLoaded() {
+      if (this.activeImageRequestId === this.imageRequestId) {
+        this.isImageLoading = false
+      }
+    },
+
+    onImageError() {
+      if (this.activeImageRequestId !== this.imageRequestId) return
+      const fallback = this.selectedProduct?.image_url || '/static/images/product-placeholder.jpg'
+      this.activeImageUrl = fallback
+      this.activeImageRequestId = this.imageRequestId
+      this.lastImageVariantKey = ''
+      this.isImageLoading = false
     },
 
     selectVariant(attribute, value) {
@@ -1353,6 +1467,29 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.image-frame {
+  position: relative;
+  width: 100%;
+}
+
+.image-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.loading-spinner-large {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #94a3b8;
+  border-top: 3px solid #cbd5e1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 .modal-product-image img {
