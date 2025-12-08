@@ -17,9 +17,9 @@
         >
       </div>
       <div class="ear-upload-content">
-        <h4>Left Ear<span v-if="requireLeftDoc" class="required-mark"> *</span></h4>
+        <h4>{{ $t('checkout.upload.leftEar') }}<span v-if="requireLeftDoc" class="required-mark"> *</span></h4>
         <div class="upload-info">
-          <span v-if="!leftImpressionDoc" class="upload-prompt">Click or drag file here</span>
+          <span v-if="!leftImpressionDoc" class="upload-prompt">{{ $t('checkout.upload.prompt') }}</span>
           <span v-else class="uploaded-filename">{{ leftImpressionDoc.name }}</span>
         </div>
         <input
@@ -50,9 +50,9 @@
         >
       </div>
       <div class="ear-upload-content">
-        <h4>Right Ear<span v-if="requireRightDoc" class="required-mark"> *</span></h4>
+        <h4>{{ $t('checkout.upload.rightEar') }}<span v-if="requireRightDoc" class="required-mark"> *</span></h4>
         <div class="upload-info">
-          <span v-if="!rightImpressionDoc" class="upload-prompt">Click or drag file here</span>
+          <span v-if="!rightImpressionDoc" class="upload-prompt">{{ $t('checkout.upload.prompt') }}</span>
           <span v-else class="uploaded-filename">{{ rightImpressionDoc.name }}</span>
         </div>
         <input

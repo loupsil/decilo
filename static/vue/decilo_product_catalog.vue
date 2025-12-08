@@ -1,9 +1,9 @@
 <template>
   <div class="product-catalog">
     <div class="catalog-header">
-      <h1>decilo Products</h1>
+      <h1>{{ $t('catalog.title') }}</h1>
       <p class="subtitle">
-        Explore our collection of professional decilo products
+        {{ $t('catalog.subtitle') }}
       </p>
     </div>
 
@@ -26,7 +26,7 @@
             <input
               type="text"
               v-model="searchQuery"
-              placeholder="Search products..."
+              :placeholder="$t('catalog.searchPlaceholder')"
               @input="filterProducts"
             />
           </div>
@@ -34,7 +34,7 @@
 
         <div class="categories-section">
           <div class="categories-header">
-            <h3>Categories</h3>
+            <h3>{{ $t('catalog.categories') }}</h3>
           </div>
           <div class="categories-list">
             <label class="category-checkbox-item">
@@ -44,7 +44,7 @@
                 @change="toggleAllCategories"
               />
               <span class="checkmark"></span>
-              All Categories
+              {{ $t('catalog.allCategories') }}
             </label>
             <label
               v-for="category in categories"
@@ -71,7 +71,7 @@
           </div>
 
           <div v-else-if="filteredProducts.length === 0" class="no-products">
-            <p>No products found</p>
+            <p>{{ $t('catalog.noProducts') }}</p>
           </div>
 
           <template v-else>
@@ -83,7 +83,7 @@
               <div class="product-image" @click="showProductDetails(product)">
                 <img :src="product.image_url" :alt="product.name" />
                 <div class="image-overlay">
-                  <span>Order</span>
+                  <span>{{ $t('catalog.order') }}</span>
                 </div>
               </div>
               <div class="product-details">
@@ -97,7 +97,7 @@
                     class="details-btn"
                     @click="showProductDetails(product)"
                   >
-                    Order
+                    {{ $t('catalog.order') }}
                   </button>
                 </div>
               </div>
@@ -114,7 +114,7 @@
         @click="changePage(currentPage - 1)"
         class="page-btn"
       >
-        Previous
+        {{ $t('catalog.previous') }}
       </button>
 
       <div class="page-numbers">
@@ -135,7 +135,7 @@
         @click="changePage(currentPage + 1)"
         class="page-btn"
       >
-        Next
+        {{ $t('catalog.next') }}
       </button>
     </div>
 

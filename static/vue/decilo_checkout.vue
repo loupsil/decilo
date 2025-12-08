@@ -5,33 +5,33 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M19 12H5M12 19l-7-7 7-7"/>
       </svg>
-      Back to Products
+      {{ $t('checkout.backToProducts') }}
     </button>
       <!-- Progress Bar: fixed at top of modal -->
       <div class="order-progress">
         <div class="progress-step" :class="{ active: orderStep >= 0, completed: orderStep > 0 }">
           <div class="step-number">1</div>
-          <span>Product</span>
+          <span>{{ $t('checkout.step.product') }}</span>
         </div>
         <div class="progress-line" :class="{ active: orderStep > 0 }"></div>
         <div class="progress-step" :class="{ active: orderStep >= 1, completed: orderStep > 1 }">
           <div class="step-number">2</div>
-          <span>Patient</span>
+          <span>{{ $t('checkout.step.patient') }}</span>
         </div>
         <div class="progress-line" :class="{ active: orderStep > 1 }"></div>
         <div class="progress-step" :class="{ active: orderStep >= 2, completed: orderStep > 2 }">
           <div class="step-number">3</div>
-          <span>Ear Impressions</span>
+          <span>{{ $t('checkout.step.earImpressions') }}</span>
         </div>
         <div class="progress-line" :class="{ active: orderStep > 2 }"></div>
         <div class="progress-step" :class="{ active: orderStep >= 3, completed: orderStep > 3 }">
           <div class="step-number">4</div>
-          <span>Review</span>
+          <span>{{ $t('checkout.step.review') }}</span>
         </div>
         <div class="progress-line" :class="{ active: orderStep > 3 }"></div>
         <div class="progress-step" :class="{ active: orderStep >= 4 }">
           <div class="step-number">5</div>
-          <span>Confirm</span>
+          <span>{{ $t('checkout.step.confirm') }}</span>
         </div>
       </div>
       <div class="modal-product-details">
@@ -56,10 +56,10 @@
             <p class="full-description">{{ selectedProduct.full_description }}</p>
             <div v-if="isDetailLoading" class="detail-loading">
               <div class="loading-spinner-small"></div>
-              <span>Loading options...</span>
+              <span>{{ $t('checkout.loadingOptions') }}</span>
             </div>
             <div v-if="selectedProduct.specifications && selectedProduct.specifications.length > 0" class="specifications">
-              <h3>Specifications</h3>
+              <h3>{{ $t('checkout.specifications') }}</h3>
               <ul>
                 <li v-for="(spec, index) in selectedProduct.specifications" :key="index">
                   {{ spec }}
@@ -69,7 +69,7 @@
 
             <!-- Product Variants -->
             <div v-if="filteredVariants.length > 0" class="variants-section">
-              <h3>Available Options</h3>
+              <h3>{{ $t('checkout.availableOptions') }}</h3>
               <div class="variant-groups">
                 <div v-for="variant in filteredVariants" :key="variant.attribute" class="variant-group">
                   <h4>{{ variant.attribute }}</h4>
@@ -93,7 +93,7 @@
 
           <!-- Step 2: Patient Information -->
           <div v-if="orderStep === 1" class="order-step">
-            <h2>Patient Information</h2>
+            <h2>{{ $t('checkout.patientInformation') }}</h2>
 
             <!-- Patient Validation Error Message -->
             <div v-if="patientValidationError" class="patient-validation-error">
@@ -103,7 +103,7 @@
 
             <!-- Client Type Selection (if not selected yet) -->
             <div v-if="!isClientTypeSelected" class="client-type-selection">
-              <h3>Is this a new patient or an existing patient?</h3>
+              <h3>{{ $t('checkout.clientTypePrompt') }}</h3>
               <div class="client-type-buttons">
                 <button
                   class="client-type-btn"
@@ -117,8 +117,8 @@
                     </svg>
                   </div>
                   <div class="client-type-content">
-                    <h4>New Patient</h4>
-                    <p>Create a new patient profile</p>
+                    <h4>{{ $t('checkout.newPatient') }}</h4>
+                    <p>{{ $t('checkout.newPatientDescription') }}</p>
                   </div>
                 </button>
 
@@ -136,8 +136,8 @@
                     </svg>
                   </div>
                   <div class="client-type-content">
-                    <h4>Existing Patient</h4>
-                    <p>Select from existing patients</p>
+                    <h4>{{ $t('checkout.existingPatient') }}</h4>
+                    <p>{{ $t('checkout.existingPatientDescription') }}</p>
                   </div>
                 </button>
               </div>
@@ -146,15 +146,15 @@
             <!-- Existing Client Selection -->
             <div v-else-if="clientType === 'existing'" class="existing-client-section">
               <div class="client-type-header">
-                <h3>Existing Patient</h3>
+                <h3>{{ $t('checkout.existingPatient') }}</h3>
                 <button class="change-client-type-btn" @click="changeClientType">
-                  Change to New Patient
+                  {{ $t('checkout.changeToNewPatient') }}
                 </button>
               </div>
 
               <!-- Patient Selection -->
               <div class="form-group">
-                <label for="patientSelect">Select Existing Patient</label>
+                <label for="patientSelect">{{ $t('checkout.selectExistingPatient') }}</label>
 
                 <!-- Patient Selection Container -->
                 <div class="patient-selection-container">
@@ -169,7 +169,7 @@
                       </div>
                       <div class="dropdown-text">
                         <span v-if="selectedPatient">{{ selectedPatient.name }}</span>
-                        <span v-else class="placeholder">Choose existing patient</span>
+                        <span v-else class="placeholder">{{ $t('checkout.chooseExistingPatient') }}</span>
                       </div>
                       <div class="dropdown-arrow" :class="{ 'rotated': isDropdownOpen }">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -189,7 +189,7 @@
                       <!-- Loading State -->
                       <div v-if="isLoadingPatients" class="dropdown-loading">
                         <div class="loading-spinner-small"></div>
-                        <span>Loading patients...</span>
+                        <span>{{ $t('checkout.loadingPatients') }}</span>
                       </div>
 
                       <!-- Options List -->
@@ -210,8 +210,8 @@
                           <div class="option-content">
                             <div class="option-name">{{ patient.name }}</div>
                             <div class="option-details">
-                              <span v-if="patient.email">{{ patient.email }}</span>
-                              <span v-if="patient.phone">{{ patient.phone }}</span>
+                              <span v-if="patient.email">{{ $t('checkout.email') }}: {{ patient.email }}</span>
+                              <span v-if="patient.phone">{{ $t('checkout.phone') }}: {{ patient.phone }}</span>
                             </div>
                           </div>
                           <div v-if="selectedPatient && selectedPatient.id === patient.id" class="option-check">
@@ -231,8 +231,8 @@
                           </svg>
                         </div>
                         <div class="empty-content">
-                          <p>No patients found</p>
-                          <small>Create a new patient below or start typing to add one manually</small>
+                          <p>{{ $t('checkout.noPatientsFound') }}</p>
+                          <small>{{ $t('checkout.addNewPatientInstruction') }}</small>
                         </div>
                       </div>
                     </div>
@@ -243,7 +243,7 @@
                     <input
                       v-model="patientSearchQuery"
                       type="text"
-                      placeholder="Search patients..."
+                      :placeholder="$t('checkout.searchPatientsPlaceholder')"
                       class="patient-search-input"
                       @input="filterPatients"
                     >
@@ -259,9 +259,9 @@
             <!-- New Client Form -->
             <div v-else-if="clientType === 'new'" class="new-client-section">
               <div class="client-type-header">
-                <h3>New Patient</h3>
+                <h3>{{ $t('checkout.newPatient') }}</h3>
                 <button class="change-client-type-btn" @click="changeClientType">
-                  Change to Existing Patient
+                  {{ $t('checkout.changeToExistingPatient') }}
                 </button>
               </div>
 
@@ -269,22 +269,22 @@
               <div class="create-patient-section">
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="patientFirstName">First Name *</label>
+                    <label for="patientFirstName">{{ $t('checkout.firstName') }} *</label>
                     <input
                       id="patientFirstName"
                       v-model="orderForm.patientFirstName"
                       type="text"
-                      placeholder="Enter patient's first name"
+                      :placeholder="$t('checkout.firstNamePlaceholder')"
                       @input="clearPatientValidationError"
                     >
                   </div>
                   <div class="form-group">
-                    <label for="patientLastName">Last Name *</label>
+                    <label for="patientLastName">{{ $t('checkout.lastName') }} *</label>
                     <input
                       id="patientLastName"
                       v-model="orderForm.patientLastName"
                       type="text"
-                      placeholder="Enter patient's last name"
+                      :placeholder="$t('checkout.lastNamePlaceholder')"
                       @input="clearPatientValidationError"
                     >
                   </div>
@@ -295,11 +295,11 @@
 
           <!-- Step 3: Document Upload -->
           <div v-if="orderStep === 2" class="order-step">
-            <h2>Ear Impressions</h2>
+            <h2>{{ $t('checkout.earImpressionsTitle') }}</h2>
 
             <!-- Impression Method Selection (only for new patients, if not selected yet) -->
             <div v-if="!isImpressionMethodSelected && clientType !== 'existing'" class="impression-method-selection">
-              <h3>How would you like to provide the ear impressions?</h3>
+              <h3>{{ $t('checkout.impressionQuestion') }}</h3>
               <div class="impression-method-buttons">
                 <button
                   class="impression-method-btn"
@@ -312,8 +312,8 @@
                     </svg>
                   </div>
                   <div class="impression-method-content">
-                    <h4>Scan of ear impressions</h4>
-                    <p>Upload scan of impressions</p>
+                    <h4>{{ $t('checkout.impressionScanTitle') }}</h4>
+                    <p>{{ $t('checkout.impressionScanSubtitle') }}</p>
                   </div>
                 </button>
 
@@ -328,8 +328,8 @@
                     </svg>
                   </div>
                   <div class="impression-method-content">
-                    <h4>Shipping of ear impressions</h4>
-                    <p>Ship your ear impressions</p>
+                    <h4>{{ $t('checkout.impressionShipTitle') }}</h4>
+                    <p>{{ $t('checkout.impressionShipSubtitle') }}</p>
                   </div>
                 </button>
               </div>
@@ -339,9 +339,9 @@
             <div v-else-if="isImpressionMethodSelected || clientType === 'existing'">
               <!-- Method header with option to change (only for new patients) -->
               <div v-if="clientType !== 'existing'" class="impression-method-header">
-                <h3>{{ impressionMethod === 'scan' ? 'Scan of ear impressions' : 'Shipping of ear impressions' }}</h3>
+                <h3>{{ impressionMethod === 'scan' ? $t('checkout.impressionScanTitle') : $t('checkout.impressionShipTitle') }}</h3>
                 <button class="change-impression-method-btn" @click="changeImpressionMethod">
-                  Change Method
+                  {{ $t('checkout.changeMethod') }}
                 </button>
               </div>
 
@@ -349,7 +349,7 @@
               <div v-if="impressionMethod === 'ship'" class="form-group">
                 <div class="highlight-note">
                   <span class="highlight-icon">📦</span>
-                  <span class="highlight-text"><strong>Merci d'envoyer les empreintes en indiquant le numéro ID MO</strong></span>
+                  <span class="highlight-text"><strong>{{ $t('checkout.shipInstruction') }}</strong></span>
                 </div>
               </div>
 
@@ -357,7 +357,7 @@
               <div v-else-if="isSendingImpressions" class="form-group">
                 <div class="highlight-note">
                   <span class="highlight-icon">📦</span>
-                  <span class="highlight-text"><strong>Merci d'envoyer les empreintes en indiquant le numéro ID MO</strong></span>
+                  <span class="highlight-text"><strong>{{ $t('checkout.shipInstruction') }}</strong></span>
                 </div>
               </div>
 
@@ -365,28 +365,28 @@
               <div v-else-if="impressionMethod === 'scan' || clientType === 'existing'">
 
                 <!-- Document status message for existing patients -->
-                <div v-if="clientType === 'existing' && !earImpressionsLoading" class="form-group">
-                  <div v-if="earImpressionsError" class="info-note error">
-                    <span class="info-icon">⚠️</span>
-                    <span class="info-text">{{ earImpressionsError }}</span>
+                  <div v-if="clientType === 'existing' && !earImpressionsLoading" class="form-group">
+                    <div v-if="earImpressionsError" class="info-note error">
+                      <span class="info-icon">⚠️</span>
+                      <span class="info-text">{{ earImpressionsError }}</span>
+                    </div>
+                    <div v-else-if="earImpressions.left?.exists || earImpressions.right?.exists" class="info-note success">
+                      <span class="info-icon">✓</span>
+                      <span class="info-text"><strong>{{ $t('checkout.docsFound', { name: selectedPatient?.name || '' }) }}</strong> - {{ $t('checkout.docsLoaded') }}</span>
+                    </div>
+                    <div v-else class="info-note warning">
+                      <span class="info-icon">ℹ️</span>
+                      <span class="info-text"><strong>{{ $t('checkout.noDocsFound', { name: selectedPatient?.name || '' }) }}</strong> - {{ $t('checkout.docsUploadPrompt') }}</span>
+                    </div>
                   </div>
-                  <div v-else-if="earImpressions.left?.exists || earImpressions.right?.exists" class="info-note success">
-                    <span class="info-icon">✓</span>
-                    <span class="info-text"><strong>Documents found for {{ selectedPatient?.name }}</strong> - They have been automatically loaded. You can replace them if needed.</span>
-                  </div>
-                  <div v-else class="info-note warning">
-                    <span class="info-icon">ℹ️</span>
-                    <span class="info-text"><strong>No existing documents found for {{ selectedPatient?.name }}</strong> - Please upload new ear impression documents or send ear impressions indicating the MO ID number.</span>
-                  </div>
-                </div>
 
-                <!-- Loading spinner for existing patients -->
-                <div v-if="clientType === 'existing' && earImpressionsLoading" class="form-group">
-                  <div class="dropdown-loading">
-                    <div class="loading-spinner-small"></div>
-                    <span>Loading documents...</span>
+                  <!-- Loading spinner for existing patients -->
+                  <div v-if="clientType === 'existing' && earImpressionsLoading" class="form-group">
+                    <div class="dropdown-loading">
+                      <div class="loading-spinner-small"></div>
+                      <span>{{ $t('checkout.loadingDocuments') }}</span>
+                    </div>
                   </div>
-                </div>
 
                 <!-- Conditionally render impression uploads for 3D scan or previous order -->
                 <upload-ear-impressions
@@ -405,11 +405,11 @@
 
             <!-- Additional Notes (shown when method is selected or for existing patients) -->
             <div v-if="isImpressionMethodSelected || clientType === 'existing'" class="form-group">
-              <label for="notes">Additional Notes</label>
+              <label for="notes">{{ $t('checkout.additionalNotes') }}</label>
               <textarea
                 id="notes"
                 v-model="orderForm.notes"
-                placeholder="Enter any additional notes or requirements"
+                :placeholder="$t('checkout.additionalNotesPlaceholder')"
                 rows="4"
               ></textarea>
             </div>
@@ -417,14 +417,14 @@
 
           <!-- Step 4: Review -->
           <div v-if="orderStep === 3" class="order-step review">
-            <h2>Review Your Order</h2>
+            <h2>{{ $t('checkout.reviewTitle') }}</h2>
             <div class="review-section">
-              <h3>Product</h3>
-              <p><strong>Name:</strong> {{ selectedProduct?.name }}</p>
-              <p><strong>Description:</strong> {{ selectedProduct?.full_description }}</p>
+              <h3>{{ $t('checkout.review.product') }}</h3>
+              <p><strong>{{ $t('checkout.review.nameLabel') }}</strong> {{ selectedProduct?.name }}</p>
+              <p><strong>{{ $t('checkout.review.descriptionLabel') }}</strong> {{ selectedProduct?.full_description }}</p>
             </div>
             <div class="review-section" v-if="Object.keys(selectedVariants).length">
-              <h3>Selected Options</h3>
+              <h3>{{ $t('checkout.review.selectedOptions') }}</h3>
               <ul>
                 <li v-for="(value, attribute) in selectedVariants" :key="attribute">
                   <strong>{{ attribute }}:</strong> {{ value }}
@@ -432,21 +432,21 @@
               </ul>
             </div>
             <div class="review-section">
-              <h3>Patient Information</h3>
-              <p><strong>Name:</strong> {{ selectedPatient ? selectedPatient.name : ((orderForm.patientFirstName && orderForm.patientLastName) ? (orderForm.patientFirstName + ' ' + orderForm.patientLastName) : (orderForm.patientFirstName || orderForm.patientLastName || '—')) }}</p>
-              <p><strong>Notes:</strong> {{ orderForm.notes || '—' }}</p>
+              <h3>{{ $t('checkout.review.patientInfo') }}</h3>
+              <p><strong>{{ $t('checkout.review.nameLabel') }}</strong> {{ selectedPatient ? selectedPatient.name : ((orderForm.patientFirstName && orderForm.patientLastName) ? (orderForm.patientFirstName + ' ' + orderForm.patientLastName) : (orderForm.patientFirstName || orderForm.patientLastName || '—')) }}</p>
+              <p><strong>{{ $t('checkout.review.notesLabel') }}</strong> {{ orderForm.notes || '—' }}</p>
             </div>
             <div class="review-section">
-              <h3>Documents</h3>
+              <h3>{{ $t('checkout.review.documents') }}</h3>
               <template v-if="isSendingImpressions">
                 <div class="highlight-note">
                   <span class="highlight-icon">📦</span>
-                  <span class="highlight-text"><strong>Merci d'envoyer les empreintes en indiquant le numéro ID MO</strong></span>
+                  <span class="highlight-text"><strong>{{ $t('checkout.shipInstruction') }}</strong></span>
                 </div>
               </template>
               <template v-else>
-                <p><strong>Right Impression:</strong> {{ orderForm.rightImpressionDoc?.name || 'Not uploaded' }}</p>
-                <p><strong>Left Impression:</strong> {{ orderForm.leftImpressionDoc?.name || 'Not uploaded' }}</p>
+                <p><strong>{{ $t('checkout.review.rightImpression') }}</strong> {{ orderForm.rightImpressionDoc?.name || $t('checkout.review.notUploaded') }}</p>
+                <p><strong>{{ $t('checkout.review.leftImpression') }}</strong> {{ orderForm.leftImpressionDoc?.name || $t('checkout.review.notUploaded') }}</p>
               </template>
             </div>
           </div>
@@ -454,13 +454,13 @@
           <!-- Step 5: Confirmation -->
           <div v-if="orderStep === 4" class="order-step confirmation">
             <div class="confirmation-content">
-              <h2>Order Confirmation</h2>
-              <p>Your order has been successfully placed!</p>
+              <h2>{{ $t('checkout.confirmationTitle') }}</h2>
+              <p>{{ $t('checkout.confirmationMessage') }}</p>
               <button class="confirmation-btn" @click="viewOrders">
-                See My Orders
+                {{ $t('checkout.confirmationSeeOrders') }}
               </button>
               <button class="confirmation-btn" @click="backToProducts">
-                Place a new order
+                {{ $t('checkout.confirmationNewOrder') }}
               </button>
             </div>
           </div>
@@ -476,7 +476,7 @@
             :disabled="isSubmittingOrder"
             @click="handleBack"
           >
-            Back
+            {{ $t('checkout.back') }}
           </button>
           <button
             v-if="orderStep < 4"
@@ -488,7 +488,7 @@
               <div class="spinner"></div>
             </div>
             <span v-else>
-              {{ orderStep === 3 ? 'Place Order' : 'Next' }}
+              {{ orderStep === 3 ? $t('checkout.placeOrder') : $t('checkout.next') }}
             </span>
           </button>
         </div>

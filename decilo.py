@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, Response
+from flask import Blueprint, jsonify, request, Response, g
 import xmlrpc.client
 import os
 from dotenv import load_dotenv
@@ -43,7 +43,7 @@ VARIANT_IMAGE_CACHE = {}
 # Language mapping helpers
 UI_TO_ODOO_LANG = {
     'en': 'en_US',
-    'fr': 'fr_FR',
+    'fr': 'fr_BE',  # use installed FR locale
     'nl': 'nl_NL',
 }
 
@@ -56,6 +56,50 @@ ODOO_TO_UI_LANG = {
     'nl_BE': 'nl',
 }
 
+def normalize_to_odoo_locale(locale_value):
+    """Normalize various locale inputs to an Odoo-friendly locale code."""
+    default_locale = UI_TO_ODOO_LANG.get('en', 'en_US')
+    if not locale_value:
+        return default_locale
+    val = str(locale_value).strip()
+    lower_val = val.lower()
+
+    # If already an Odoo code
+    for v in UI_TO_ODOO_LANG.values():
+        if lower_val == v.lower():
+            return v
+
+    # If UI shorthand
+    mapped = UI_TO_ODOO_LANG.get(lower_val)
+    if mapped:
+        return mapped
+
+    # Accept formats like en-us, fr-be
+    if '-' in lower_val:
+        normalized = lower_val.replace('-', '_')
+        for v in UI_TO_ODOO_LANG.values():
+            if normalized == v.lower():
+                return v
+
+    return default_locale
+
+def normalize_to_ui_language(locale_value):
+    """Normalize an Odoo locale to UI shorthand (en/fr/nl), defaulting to fr."""
+    if not locale_value:
+        return 'fr'
+    val = str(locale_value).strip()
+    lower_val = val.lower().replace('-', '_')
+    for odoo_lang, ui_lang in ODOO_TO_UI_LANG.items():
+        if lower_val == odoo_lang.lower():
+            return ui_lang
+    if lower_val in UI_TO_ODOO_LANG:
+        return lower_val
+    return 'fr'
+
+def get_request_locale():
+    """Return the current request locale (Odoo code), defaulting to en_US."""
+    return getattr(g, 'decilo_locale', 'en_US')
+
 def create_token(user_data):
     """Create a JWT token for the user"""
     try:
@@ -65,6 +109,8 @@ def create_token(user_data):
             'id': user_data['id'],
             'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
         }
+        if user_data.get('lang'):
+            payload['lang'] = user_data['lang']
         token = jwt.encode(payload, JWT_SECRET_KEY, algorithm='HS256')
         return token
     except Exception as e:
@@ -104,11 +150,33 @@ def get_odoo_common():
         logger.error(f"Failed to connect to Odoo common endpoint: {str(e)}")
         raise
 
+class OdooModelsProxy:
+    """Wraps the Odoo models proxy to inject request locale into context."""
+    def __init__(self, models_proxy, locale_provider):
+        self._models = models_proxy
+        self._locale_provider = locale_provider
+
+    def execute_kw(self, db, uid, pwd, model, method, args=None, kwargs=None):
+        args = args or []
+        kwargs = kwargs or {}
+        context = kwargs.get('context')
+        if not isinstance(context, dict):
+            context = {}
+        context = {**context}
+        lang = self._locale_provider()
+        if lang:
+            context.setdefault('lang', lang)
+        kwargs['context'] = context
+        return self._models.execute_kw(db, uid, pwd, model, method, args, kwargs)
+
+    def __getattr__(self, item):
+        return getattr(self._models, item)
+
 def get_odoo_models():
-    """Get Odoo models endpoint"""
+    """Get Odoo models endpoint with locale-aware wrapper"""
     try:
-        models = xmlrpc.client.ServerProxy(f'{ODOO_URL}/xmlrpc/2/object', allow_none=True)
-        return models
+        base_models = xmlrpc.client.ServerProxy(f'{ODOO_URL}/xmlrpc/2/object', allow_none=True)
+        return OdooModelsProxy(base_models, get_request_locale)
     except Exception as e:
         logger.error(f"Failed to connect to Odoo models endpoint: {str(e)}")
         raise
@@ -124,6 +192,30 @@ def get_uid():
     except Exception as e:
         logger.error(f"Failed to authenticate with Odoo: {str(e)}")
         raise
+
+@decilo_bp.before_app_request
+def set_request_locale():
+    """Middleware-style hook to determine locale for the current request."""
+    locale = None
+
+    # Header or query param override
+    header_locale = request.headers.get('X-Locale') or request.args.get('locale')
+    if header_locale:
+        locale = header_locale
+
+    # Fallback to JWT claim (without failing the request on decode issues)
+    if not locale:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            try:
+                payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'], options={'verify_exp': False})
+                locale = payload.get('lang')
+            except Exception:
+                locale = None
+
+    g.decilo_locale = normalize_to_odoo_locale(locale)
+    logger.info(f"[locale] Selected locale for request: {g.decilo_locale}")
 
 @decilo_bp.route('/decilo-api/customer-login', methods=['POST'])
 def customer_login():
@@ -170,12 +262,14 @@ def customer_login():
                 {'fields': ['name', 'email', 'partner_id', 'lang']}
             )[0]
 
+            user_lang = normalize_to_ui_language(user.get('lang'))
+
             # Create user data
             user_data = {
                 'id': user['partner_id'][0],
                 'name': user['name'],
                 'email': user['email'] or email,
-                'lang': user.get('lang')
+                'lang': user_lang
             }
 
             # Create JWT token
@@ -314,7 +408,7 @@ class OdooXMLRPCClient(OdooClient):
     def _get_models(self):
         if not self._models:
             self._models = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object', allow_none=True)
-        return self._models
+        return OdooModelsProxy(self._models, get_request_locale)
     
     def search_products(self, domain=None, fields=None, offset=0, limit=None, order=None, include_variants=False):
         uid = self.authenticate()

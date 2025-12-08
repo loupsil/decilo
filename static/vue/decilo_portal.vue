@@ -16,8 +16,8 @@
             alt="Decilo Logo" 
             class="login-logo"
           >
-          <h2>Portal for business customers</h2>
-          <p class="login-subtitle">Welcome to the new decilo expert world</p>
+          <h2>{{ $t('login.title') }}</h2>
+          <p class="login-subtitle">{{ $t('login.subtitle') }}</p>
         </div>
         <form @submit.prevent="login" class="login-form">
           <div class="form-group">
@@ -26,7 +26,7 @@
                 id="email"
                 type="email"
                 v-model="email"
-                placeholder="Enter your email address"
+                :placeholder="$t('login.emailPlaceholder')"
                 required
                 autocomplete="email"
               >
@@ -38,17 +38,17 @@
                 id="password"
                 :type="showPassword ? 'text' : 'password'"
                 v-model="password"
-                placeholder="Enter your password"
+                :placeholder="$t('login.passwordPlaceholder')"
                 required
                 autocomplete="current-password"
               >
             </div>
           </div>
           <button type="submit" class="login-button">
-            Sign In
+            {{ $t('login.signIn') }}
           </button>
           <p class="support-link">
-            Having trouble signing in? Contact <a href="mailto:support@decilo.be">support@decilo.be</a>
+            {{ $t('login.supportPrefix') }} <a href="mailto:support@decilo.be">support@decilo.be</a>
           </p>
           <p v-if="error" class="error-message">{{ error }}</p>
         </form>
@@ -70,14 +70,14 @@
               :class="{ active: activeTab === 'products' }"
               @click="activeTab = 'products'"
             >
-              Products
+              {{ $t('nav.products') }}
             </button>
             <button 
               class="tab-btn" 
               :class="{ active: activeTab === 'orders' }"
               @click="activeTab = 'orders'"
             >
-              Orders
+              {{ $t('nav.orders') }}
             </button>
           </div>
           <div class="profile-menu">
@@ -89,7 +89,7 @@
                   <span>{{ customerInfo.email }}</span>
                 </div>
                 <div class="profile-language">
-                  <div class="language-label">Language</div>
+                  <div class="language-label">{{ $t('nav.language') }}</div>
                   <button class="language-select" @click.stop="toggleLanguageDropdown">
                     <span class="language-select-inner">
                       <span
@@ -119,7 +119,7 @@
                   </div>
                 </div>
                 <button @click="logout" class="logout-btn">
-                  Sign Out
+                  {{ $t('nav.signOut') }}
                 </button>
               </div>
             </div>
@@ -178,6 +178,14 @@ export default {
     }
   },
   mounted() {
+    this.installLocaleFetchInterceptor();
+
+    const storedLocale = localStorage.getItem('decilo_locale');
+    if (storedLocale) {
+      this.selectedLanguage = this.normalizeLanguage(storedLocale);
+    }
+    this.setLocale(this.selectedLanguage);
+
     // Check for stored token on component creation
     const storedToken = localStorage.getItem('decilo_token');
     const storedUser = localStorage.getItem('decilo_user');
@@ -189,13 +197,31 @@ export default {
         this.customerInfo = JSON.parse(storedUser);
         this.isLoggedIn = true;
         this.selectedLanguage = this.normalizeLanguage(this.customerInfo.lang);
+        localStorage.setItem('decilo_locale', this.selectedLanguage);
+        this.setLocale(this.selectedLanguage);
       }
     }
   },
   methods: {
+    setLocale(value) {
+      if (!this.$i18n) return;
+      if (this.$i18n.global && this.$i18n.global.locale !== undefined) {
+        if (typeof this.$i18n.global.locale === 'object' && 'value' in this.$i18n.global.locale) {
+          this.$i18n.global.locale.value = value;
+        } else {
+          this.$i18n.global.locale = value;
+        }
+      } else if (this.$i18n.locale !== undefined) {
+        if (typeof this.$i18n.locale === 'object' && 'value' in this.$i18n.locale) {
+          this.$i18n.locale.value = value;
+        } else {
+          this.$i18n.locale = value;
+        }
+      }
+    },
     async login() {
       if (!this.email || !this.password) {
-        this.error = 'Please enter your email and password';
+        this.error = this.$t('login.missingFields');
         return;
       }
 
@@ -217,7 +243,7 @@ export default {
         const data = await response.json();
         
         if (!response.ok) {
-          this.error = data.error || 'Login failed. Please try again.';
+          this.error = data.error || this.$t('login.failed');
           return;
         }
         
@@ -228,9 +254,10 @@ export default {
         this.customerInfo = data.user;
         this.isLoggedIn = true;
         this.selectedLanguage = this.normalizeLanguage(data.user?.lang);
+        localStorage.setItem('decilo_locale', this.selectedLanguage);
         
       } catch (err) {
-        this.error = 'Login failed. Please try again.';
+        this.error = this.$t('login.failed');
       } finally {
         this.isLoading = false;
       }
@@ -256,6 +283,7 @@ export default {
       this.showProfileMenu = false;
       this.isLanguageOpen = false;
       this.selectedLanguage = 'fr';
+      localStorage.removeItem('decilo_locale');
     },
     toggleLanguageDropdown() {
       this.isLanguageOpen = !this.isLanguageOpen;
@@ -278,10 +306,26 @@ export default {
       if (!lang) return 'fr';
       return map[String(lang).toLowerCase()] || 'fr';
     },
+    installLocaleFetchInterceptor() {
+      if (window.__deciloFetchPatched) return;
+      window.__deciloFetchPatched = true;
+
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        const headers = new Headers(init.headers || {});
+        const locale = localStorage.getItem('decilo_locale');
+        if (locale) {
+          headers.set('X-Locale', locale);
+        }
+        return originalFetch(input, { ...init, headers });
+      };
+    },
     selectLanguage(value) {
       this.selectedLanguage = value;
+      this.setLocale(value);
       this.isLanguageOpen = false;
       this.customerInfo = { ...this.customerInfo, lang: value };
+      localStorage.setItem('decilo_locale', value);
       const storedUser = localStorage.getItem('decilo_user');
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
@@ -309,7 +353,7 @@ export default {
       this.logout();
 
       // Show a message to the user
-      this.error = 'Your session has expired. Please log in again.';
+      this.error = this.$t('login.sessionExpired');
 
       // Switch to login view
       this.isLoggedIn = false;
