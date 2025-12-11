@@ -1,8 +1,10 @@
 <template>
   <div class="product-catalog">
     <div class="catalog-header">
-      <h1>decilo Products</h1>
-      <p class="subtitle">Explore our collection of professional decilo products </p>
+      <h1>{{ $t('catalog.title') }}</h1>
+      <p class="subtitle">
+        {{ $t('catalog.subtitle') }}
+      </p>
     </div>
 
     <div class="catalog-content">
@@ -11,22 +13,28 @@
         <!-- Search Bar at the top -->
         <div class="sidebar-search">
           <div class="search-bar">
-            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              class="search-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <circle cx="11" cy="11" r="8"></circle>
               <path d="m21 21-4.35-4.35"></path>
             </svg>
             <input
               type="text"
               v-model="searchQuery"
-              placeholder="Search products..."
+              :placeholder="$t('catalog.searchPlaceholder')"
               @input="filterProducts"
-            >
+            />
           </div>
         </div>
 
         <div class="categories-section">
           <div class="categories-header">
-            <h3>Categories</h3>
+            <h3>{{ $t('catalog.categories') }}</h3>
           </div>
           <div class="categories-list">
             <label class="category-checkbox-item">
@@ -34,9 +42,9 @@
                 type="checkbox"
                 :checked="selectedCategories.length === 0"
                 @change="toggleAllCategories"
-              >
+              />
               <span class="checkmark"></span>
-              All Categories
+              {{ $t('catalog.allCategories') }}
             </label>
             <label
               v-for="category in categories"
@@ -47,7 +55,7 @@
                 type="checkbox"
                 :checked="selectedCategories.includes(category.name)"
                 @change="toggleCategory(category.name)"
-              >
+              />
               <span class="checkmark"></span>
               {{ category.name }}
             </label>
@@ -58,36 +66,45 @@
       <!-- Main Content Area -->
       <div class="main-content">
         <div class="products-grid" ref="productsGrid">
-      <div v-if="isLoading" class="loading-overlay">
-        <div class="loading-spinner"></div>
-      </div>
-      
-      <div v-else-if="filteredProducts.length === 0" class="no-products">
-        <p>No products found</p>
-      </div>
-
-      <template v-else>
-        <div v-for="product in paginatedProducts" :key="product.id" class="product-card">
-          <div class="product-image" @click="showProductDetails(product)">
-            <img :src="product.image_url" :alt="product.name">
-            <div class="image-overlay">
-              <span>Order</span>
-            </div>
+          <div v-if="isLoading" class="loading-overlay">
+            <div class="loading-spinner"></div>
           </div>
-            <div class="product-details">
-              <h3>{{ product.name }}</h3>
-              <div class="product-category">
-                <span class="category-badge">{{ product.category }}</span>
+
+          <div v-else-if="filteredProducts.length === 0" class="no-products">
+            <p>{{ $t('catalog.noProducts') }}</p>
+          </div>
+
+          <template v-else>
+            <div
+              v-for="product in paginatedProducts"
+              :key="product.id"
+              class="product-card"
+            >
+              <div class="product-image" @click="showProductDetails(product)">
+                <img :src="product.image_url" :alt="product.name" />
+                <div class="image-overlay">
+                  <span>{{ $t('catalog.order') }}</span>
+                </div>
               </div>
-              <p class="product-description">{{ product.description }}</p>
-              <div class="product-actions">
-                <button class="details-btn" @click="showProductDetails(product)">Order</button>
+              <div class="product-details">
+                <h3>{{ product.name }}</h3>
+                <div class="product-category">
+                  <span class="category-badge">{{ product.category }}</span>
+                </div>
+                <p class="product-description">{{ product.description }}</p>
+                <div class="product-actions">
+                  <button
+                    class="details-btn"
+                    @click="showProductDetails(product)"
+                  >
+                    {{ $t('catalog.order') }}
+                  </button>
+                </div>
               </div>
             </div>
+          </template>
         </div>
-      </template>
-    </div>
-    </div>
+      </div>
     </div>
 
     <!-- Pagination -->
@@ -97,7 +114,7 @@
         @click="changePage(currentPage - 1)"
         class="page-btn"
       >
-        Previous
+        {{ $t('catalog.previous') }}
       </button>
 
       <div class="page-numbers">
@@ -110,13 +127,15 @@
           {{ page }}
         </button>
       </div>
-      
+
       <button
-        :disabled="currentPage >= Math.ceil(filteredProducts.length / itemsPerPage)"
+        :disabled="
+          currentPage >= Math.ceil(filteredProducts.length / itemsPerPage)
+        "
         @click="changePage(currentPage + 1)"
         class="page-btn"
       >
-        Next
+        {{ $t('catalog.next') }}
       </button>
     </div>
 
@@ -130,248 +149,348 @@
       @go-to-orders="viewOrders"
       @show-error="$emit('show-error', $event)"
       @token-expired="$emit('token-expired')"
+      :isDetailLoading="isDetailLoading"
     />
   </div>
 </template>
 
 <script>
-import DeciloCheckout from './decilo_checkout.vue'
+import DeciloCheckout from "./decilo_checkout.vue";
 
 // Simple in-memory cache for product list responses (persists for the session)
-const productCache = new Map()
+const productCache = new Map();
 
 // Click outside directive
 const clickOutside = {
   bind(el, binding, vnode) {
-    el.clickOutsideEvent = function(event) {
+    el.clickOutsideEvent = function (event) {
       if (!(el === event.target || el.contains(event.target))) {
         vnode.context[binding.expression]();
       }
     };
-    document.body.addEventListener('click', el.clickOutsideEvent);
+    document.body.addEventListener("click", el.clickOutsideEvent);
   },
   unbind(el) {
-    document.body.removeEventListener('click', el.clickOutsideEvent);
-  }
+    document.body.removeEventListener("click", el.clickOutsideEvent);
+  },
 };
 
 export default {
-  name: 'DeciloProductCatalog',
+  name: "DeciloProductCatalog",
   components: {
-    DeciloCheckout
+    DeciloCheckout,
   },
   directives: {
-    'click-outside': clickOutside
+    "click-outside": clickOutside,
   },
   data() {
     return {
       products: [],
       categories: [],
-      searchQuery: '',
+      searchQuery: "",
       selectedProduct: null,
       isLoading: false,
       currentPage: 1,
       itemsPerPage: 100,
+      imageSize: "medium",
       totalProducts: 0,
       searchTimeout: null,
       selectedVariants: {},
       selectedCategories: [],
-    }
+      isDetailLoading: false,
+    };
   },
   computed: {
     filteredProducts() {
-      let filtered = this.products
+      let filtered = this.products;
 
       // Filter products that are published for B2Audio
-      filtered = filtered.filter(product => product.x_studio_is_published_b2audio === true)
+      filtered = filtered.filter(
+        (product) => product.x_studio_is_published_b2audio === true
+      );
 
       // Apply category filter
       if (this.selectedCategories.length > 0) {
-        filtered = filtered.filter(product => this.selectedCategories.includes(product.category))
+        filtered = filtered.filter((product) =>
+          this.selectedCategories.includes(product.category)
+        );
       }
 
       // Apply search filter
       if (this.searchQuery) {
-        const query = this.searchQuery.toLowerCase()
-        filtered = filtered.filter(product =>
-          product.name.toLowerCase().includes(query) ||
-          product.description.toLowerCase().includes(query)
-        )
+        const query = this.searchQuery.toLowerCase();
+        filtered = filtered.filter(
+          (product) =>
+            product.name.toLowerCase().includes(query) ||
+            product.description.toLowerCase().includes(query)
+        );
       }
 
-      return filtered
+      return filtered;
     },
     paginatedProducts() {
-      const start = (this.currentPage - 1) * this.itemsPerPage
-      const end = start + this.itemsPerPage
-      return this.filteredProducts.slice(start, end)
-    }
+      const start = (this.currentPage - 1) * this.itemsPerPage;
+      const end = start + this.itemsPerPage;
+      return this.filteredProducts.slice(start, end);
+    },
   },
   created() {
-    this.fetchProducts()
+    this.fetchProducts();
   },
   methods: {
+    base64ToObjectUrl(b64, mime = "image/png") {
+      try {
+        const byteChars = atob(b64);
+        const byteNumbers = new Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteNumbers[i] = byteChars.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mime });
+        return URL.createObjectURL(blob);
+      } catch (err) {
+        console.warn("⚠️ Failed to convert base64 to object URL", err);
+        return null;
+      }
+    },
     getCacheKey() {
       // Build a stable cache key from current query params
       return JSON.stringify({
-        searchQuery: this.searchQuery || '',
+        searchQuery: this.searchQuery || "",
         currentPage: this.currentPage || 1,
         itemsPerPage: this.itemsPerPage || 20,
-        selectedCategories: this.selectedCategories || []
-      })
+        selectedCategories: this.selectedCategories || [],
+      });
     },
     async fetchProducts() {
-      console.log('🔍 Fetching products with params:', {
+      console.log("🔍 Fetching products with params:", {
         searchQuery: this.searchQuery,
         currentPage: this.currentPage,
         itemsPerPage: this.itemsPerPage,
-        selectedCategory: this.selectedCategory
-      })
-      
-      const cacheKey = this.getCacheKey()
-      console.log('🔑 Cache key:', cacheKey)
-      console.log('💾 Cache size:', productCache.size)
-      
+        selectedCategory: this.selectedCategory,
+      });
+
+      const cacheKey = this.getCacheKey();
+      console.log("🔑 Cache key:", cacheKey);
+      console.log("💾 Cache size:", productCache.size);
+
       if (productCache.has(cacheKey)) {
-        console.log('✅ ✅ ✅ USING CACHED PRODUCTS for key:', cacheKey)
-        const cached = productCache.get(cacheKey)
-        this.products = cached.products
-        this.totalProducts = cached.totalProducts
-        this.categories = cached.categories || []
-        this.selectedCategories = cached.selectedCategories || []
-        console.log('📊 Cached data loaded:', {
+        console.log("✅ ✅ ✅ USING CACHED PRODUCTS for key:", cacheKey);
+        const cached = productCache.get(cacheKey);
+        this.products = cached.products;
+        this.totalProducts = cached.totalProducts;
+        this.categories = cached.categories || [];
+        this.selectedCategories = cached.selectedCategories || [];
+        console.log("📊 Cached data loaded:", {
           productsCount: this.products.length,
           categoriesCount: this.categories.length,
-          categories: this.categories.map(c => c.name)
-        })
-        this.isLoading = false
-        return
+          categories: this.categories.map((c) => c.name),
+        });
+        // Hydrate images for current page even when using cache
+        await this.fetchImagesForProducts(
+          this.paginatedProducts.map((p) => p.id),
+          this.imageSize
+        );
+        this.isLoading = false;
+        return;
       }
 
-      this.isLoading = true
+      this.isLoading = true;
       try {
         // Get auth token from localStorage
-        const token = localStorage.getItem('decilo_token')
+        const token = localStorage.getItem("decilo_token");
         if (!token) {
-          console.warn('❌ No auth token found - Please log in first')
-          throw new Error('Authentication required - Please log in first')
+          console.warn("❌ No auth token found - Please log in first");
+          throw new Error("Authentication required - Please log in first");
         }
 
         // Check if token is expired before making the request
         if (this.isTokenExpired(token)) {
-          this.handleTokenExpired()
-          return
+          this.handleTokenExpired();
+          return;
         }
 
-        console.log('🔑 Found auth token')
+        console.log("🔑 Found auth token");
 
         // Prepare query parameters
-        const params = new URLSearchParams()
+        const params = new URLSearchParams();
         if (this.searchQuery) {
-          params.append('search', this.searchQuery)
+          params.append("search", this.searchQuery);
         }
         if (this.currentPage) {
-          params.append('offset', (this.currentPage - 1) * this.itemsPerPage)
+          params.append("offset", (this.currentPage - 1) * this.itemsPerPage);
         }
-        params.append('limit', this.itemsPerPage)
-        
-        const url = `/decilo-api/products?${params.toString()}`
-        console.log('📡 Making API request to:', url)
-        
+        params.append("limit", this.itemsPerPage);
+
+        const url = `/decilo-api/products?${params.toString()}`;
+        console.log("📡 Making API request to:", url);
+
         // Make API request
         const response = await fetch(url, {
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        })
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
 
         if (!response.ok) {
           if (response.status === 401) {
             // Token expired or invalid, handle it
-            this.handleTokenExpired()
-            return
+            this.handleTokenExpired();
+            return;
           }
-          const error = await response.json()
-          throw new Error(error.error || 'Failed to fetch products')
+          const error = await response.json();
+          throw new Error(error.error || "Failed to fetch products");
         }
 
-        const data = await response.json()
-        console.log('📦 Received raw API response:', {
+        const data = await response.json();
+        console.log("📦 Received raw API response:", {
           totalProducts: data.total,
           numberOfProducts: data.products.length,
           categoriesCount: data.categories ? data.categories.length : 0,
-          apiCategories: data.categories ? data.categories.map(c => ({ id: c.id, name: c.name, complete_name: c.complete_name })) : []
-        })
+          apiCategories: data.categories
+            ? data.categories.map((c) => ({
+                id: c.id,
+                name: c.name,
+                complete_name: c.complete_name,
+              }))
+            : [],
+        });
 
         // Transform the Odoo data to match our component's structure
-        this.products = data.products.map(product => {
+        this.products = data.products.map((product) => {
           // Extract short name from full category path (e.g., "Goods / Ear Tips" -> "Ear Tips")
-          const fullCategoryName = product.categ_id ? product.categ_id[1] : 'Uncategorized'
-          const shortCategoryName = fullCategoryName.includes(' / ') ?
-            fullCategoryName.split(' / ').pop() : fullCategoryName
+          const fullCategoryName = product.categ_id
+            ? product.categ_id[1]
+            : "Uncategorized";
+          const shortCategoryName = fullCategoryName.includes(" / ")
+            ? fullCategoryName.split(" / ").pop()
+            : fullCategoryName;
 
           const transformedProduct = {
             id: product.id,
             name: product.name,
-            description: this.stripHtml(product.description_ecommerce) || 'No description available',
-            full_description: this.stripHtml(product.description_ecommerce) || 'No description available',
+            description:
+              this.stripHtml(
+                product.description_ecommerce || product.description_sale
+              ) || "No description available",
+            full_description:
+              this.stripHtml(
+                product.description_ecommerce || product.description_sale
+              ) || "No description available",
             price: product.list_price || 0,
-            image_url: product.image_1920 ? `data:image/png;base64,${product.image_1920}` : '/static/images/product-placeholder.jpg',
+            image_url: "/static/images/product-placeholder.jpg", // hydrate via image endpoint
             specifications: this.extractSpecifications(product),
-            variants: product.variants || [],
+            variants: product.variants || [], // detail endpoint will hydrate when needed
             category: shortCategoryName,
-            categoryId: product.categ_id ? product.categ_id[0] : null,  // [0] contains the category ID
-            x_studio_is_published_b2audio: product.x_studio_is_published_b2audio || false
-          }
-          console.log(`✨ Transformed product ${product.id}: name='${transformedProduct.name}', category='${transformedProduct.category}'`)
-          return transformedProduct
-        })
+            categoryId: product.categ_id ? product.categ_id[0] : null, // [0] contains the category ID
+            x_studio_is_published_b2audio:
+              product.x_studio_is_published_b2audio || false,
+          };
+          console.log(
+            `✨ Transformed product ${product.id}: name='${transformedProduct.name}', category='${transformedProduct.category}'`
+          );
+          return transformedProduct;
+        });
 
-        this.totalProducts = data.total
+        this.totalProducts = data.total;
 
         // Use categories from API response instead of extracting from products
-        this.categories = (data.categories || []).map(category => {
+        this.categories = (data.categories || []).map((category) => {
           // Extract short name from full category path (e.g., "Goods / Ear Tips" -> "Ear Tips")
           // This must match the format used for product.category to enable filtering
-          const fullCategoryName = category.complete_name || category.name || 'Uncategorized'
-          const shortCategoryName = fullCategoryName.includes(' / ') ?
-            fullCategoryName.split(' / ').pop() : fullCategoryName
-          
+          const fullCategoryName =
+            category.complete_name || category.name || "Uncategorized";
+          const shortCategoryName = fullCategoryName.includes(" / ")
+            ? fullCategoryName.split(" / ").pop()
+            : fullCategoryName;
+
           return {
             id: category.id,
             name: shortCategoryName, // Use short name to match product.category format
             completeName: category.complete_name,
-            parentId: category.parent_id ? category.parent_id[0] : null
-          }
-        })
+            parentId: category.parent_id ? category.parent_id[0] : null,
+          };
+        });
 
-        console.log('✅ Products loaded successfully:', {
+        console.log("✅ Products loaded successfully:", {
           displayedProducts: this.products.length,
           totalProducts: this.totalProducts,
-          categories: this.categories.map(c => c.name)
-        })
+          categories: this.categories.map((c) => c.name),
+        });
+
+        // Fetch images for the current page in order of appearance
+        await this.fetchImagesForProducts(
+          this.paginatedProducts.map((p) => p.id),
+          this.imageSize
+        );
 
         // Store in cache
         productCache.set(cacheKey, {
           products: this.products,
           totalProducts: this.totalProducts,
           categories: this.categories,
-          selectedCategories: this.selectedCategories
-        })
-        console.log('💾 Stored in cache. Cache now has', productCache.size, 'entries')
+          selectedCategories: this.selectedCategories,
+        });
+        console.log(
+          "💾 Stored in cache. Cache now has",
+          productCache.size,
+          "entries"
+        );
       } catch (error) {
-        console.error('❌ Error fetching products:', {
+        console.error("❌ Error fetching products:", {
           error: error.message,
-          stack: error.stack
-        })
-        this.$emit('show-error', {
-          message: error.message || 'Failed to load products',
-          type: 'error'
-        })
+          stack: error.stack,
+        });
+        this.$emit("show-error", {
+          message: error.message || "Failed to load products",
+          type: "error",
+        });
       } finally {
-        this.isLoading = false
-        console.log('🏁 Product fetch completed, loading:', this.isLoading)
+        this.isLoading = false;
+        console.log("🏁 Product fetch completed, loading:", this.isLoading);
+      }
+    },
+
+    async fetchImagesForProducts(productIds, size = "medium") {
+      if (!productIds || productIds.length === 0) return;
+
+      const token = localStorage.getItem("decilo_token");
+      if (!token) return;
+
+      try {
+        const params = new URLSearchParams();
+        params.append("ids", productIds.join(","));
+        params.append("size", size);
+
+        const response = await fetch(
+          `/decilo-api/product-images?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          console.warn("⚠️ Unable to fetch product images", response.status);
+          return;
+        }
+
+        const data = await response.json();
+        const byId = {};
+        data.images.forEach((img) => {
+          if (img.image) {
+            byId[img.id] = `data:image/png;base64,${img.image}`;
+          }
+        });
+
+        this.products = this.products.map((p) => ({
+          ...p,
+          image_url: byId[p.id] || p.image_url,
+        }));
+      } catch (err) {
+        console.warn("⚠️ Failed to hydrate product images", err);
       }
     },
 
@@ -379,97 +498,169 @@ export default {
 
     extractSpecifications(product) {
       // Extract specifications from Odoo product data
-      const specs = []
+      const specs = [];
 
       if (product.default_code) {
-        specs.push(`Product Code: ${product.default_code}`)
+        specs.push(`Product Code: ${product.default_code}`);
       }
 
       // Add more specifications based on available Odoo fields
 
-      return specs
+      return specs;
     },
 
     stripHtml(htmlString) {
-      const container = document.createElement('div')
-      container.innerHTML = htmlString || ''
-      return (container.textContent || container.innerText || '').trim()
+      const container = document.createElement("div");
+      container.innerHTML = htmlString || "";
+      return (container.textContent || container.innerText || "").trim();
     },
     filterProducts() {
-      console.log('🔎 Search query changed:', this.searchQuery)
-      
+      console.log("🔎 Search query changed:", this.searchQuery);
+
       // Clear any existing timeout
       if (this.searchTimeout) {
-        console.log('⏱️ Clearing previous search timeout')
-        clearTimeout(this.searchTimeout)
+        console.log("⏱️ Clearing previous search timeout");
+        clearTimeout(this.searchTimeout);
       }
-      
+
       // Set new timeout
-      console.log('⏳ Setting new search timeout (300ms)')
+      console.log("⏳ Setting new search timeout (300ms)");
       this.searchTimeout = setTimeout(() => {
-        console.log('⌛ Search timeout triggered, executing search')
-        this.currentPage = 1 // Reset to first page when filtering
-        this.fetchProducts()
-      }, 300) // 300ms delay
+        console.log("⌛ Search timeout triggered, executing search");
+        this.currentPage = 1; // Reset to first page when filtering
+        this.fetchProducts();
+      }, 300); // 300ms delay
     },
 
     async changePage(page) {
-      console.log('📄 Changing page to:', page)
-      this.currentPage = page
-      await this.fetchProducts()
-      console.log('📜 Scrolling to top of product grid')
-      this.$refs.productsGrid?.scrollIntoView({ behavior: 'smooth' })
+      console.log("📄 Changing page to:", page);
+      this.currentPage = page;
+      await this.fetchProducts();
+      console.log("📜 Scrolling to top of product grid");
+      this.$refs.productsGrid?.scrollIntoView({ behavior: "smooth" });
     },
 
     toggleCategory(category) {
-      console.log('📑 Category toggled:', category)
-      const index = this.selectedCategories.indexOf(category)
+      console.log("📑 Category toggled:", category);
+      const index = this.selectedCategories.indexOf(category);
       if (index > -1) {
         // Remove category if already selected
-        this.selectedCategories.splice(index, 1)
+        this.selectedCategories.splice(index, 1);
       } else {
         // Add category if not selected
-        this.selectedCategories.push(category)
+        this.selectedCategories.push(category);
       }
-      this.currentPage = 1 // Reset to first page when changing category selection
+      this.currentPage = 1; // Reset to first page when changing category selection
     },
     toggleAllCategories() {
-      console.log('📑 All categories toggled')
+      console.log("📑 All categories toggled");
       if (this.selectedCategories.length === 0) {
         // If none are selected, select all categories
-        this.selectedCategories = this.categories.map(cat => cat.name)
+        this.selectedCategories = this.categories.map((cat) => cat.name);
       } else {
         // If some or all are selected, deselect all
-        this.selectedCategories = []
+        this.selectedCategories = [];
       }
-      this.currentPage = 1 // Reset to first page when changing category selection
+      this.currentPage = 1; // Reset to first page when changing category selection
     },
 
-    showProductDetails(product) {
-      this.selectedProduct = product
-      // Reset selected variants when showing a new product
-      this.selectedVariants = {}
+    async showProductDetails(product) {
+      // Always start with the list product while we hydrate details
+      this.selectedProduct = product;
+      this.selectedVariants = {};
+      this.isDetailLoading = true;
+
+      // Fetch full product detail (variants) on demand without blocking on full image
+      try {
+        const token = localStorage.getItem("decilo_token");
+        if (!token) {
+          console.warn("❌ No auth token found - cannot fetch product detail");
+          return;
+        }
+
+        const response = await fetch(
+          `/decilo-api/products/${product.id}?include_image=false`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          console.warn("⚠️ Failed to fetch product detail", response.status);
+          return;
+        }
+
+        const detail = await response.json();
+        // Merge detail into current selection but keep existing image until we fetch full image separately
+        this.selectedProduct = {
+          ...product,
+          ...detail,
+          image_url: product.image_url || "/static/images/product-placeholder.jpg",
+        };
+
+        // Pre-select first value of each variant if available, except Ear Impression Type
+        if (this.selectedProduct?.variants) {
+          this.selectedProduct.variants.forEach((variant) => {
+            if (
+              variant.values &&
+              variant.values.length > 0 &&
+              variant.attribute !== "Ear Impression Type" &&
+              !variant.attribute.toLowerCase().includes("ear impression")
+            ) {
+              this.selectedVariants[variant.attribute] = variant.values[0];
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("⚠️ Error fetching product detail", err);
+      }
+      finally {
+        this.isDetailLoading = false;
+      }
+
+      // Fetch medium first (if needed) then upgrade to full resolution
+      try {
+        await this.fetchImagesForProducts([product.id], "medium");
+        const updated = this.products.find((p) => p.id === product.id);
+        if (updated?.image_url) {
+          this.selectedProduct = {
+            ...this.selectedProduct,
+            image_url: updated.image_url,
+          };
+        }
+
+        await this.fetchImagesForProducts([product.id], "full");
+        const updatedFull = this.products.find((p) => p.id === product.id);
+        if (updatedFull?.image_url) {
+          this.selectedProduct = {
+            ...this.selectedProduct,
+            image_url: updatedFull.image_url,
+          };
+        }
+      } catch (err) {
+        console.warn("⚠️ Error fetching full image", err);
+      }
 
       // Pre-select first value of each variant if available, except Ear Impression Type
-      if (product.variants) {
-        product.variants.forEach(variant => {
-          if (variant.values && variant.values.length > 0 &&
-              variant.attribute !== 'Ear Impression Type' &&
-              !variant.attribute.toLowerCase().includes('ear impression')) {
-            this.selectedVariants[variant.attribute] = variant.values[0]
+      if (this.selectedProduct?.variants) {
+        this.selectedProduct.variants.forEach((variant) => {
+          if (
+            variant.values &&
+            variant.values.length > 0 &&
+            variant.attribute !== "Ear Impression Type" &&
+            !variant.attribute.toLowerCase().includes("ear impression")
+          ) {
+            this.selectedVariants[variant.attribute] = variant.values[0];
           }
-        })
+        });
       }
     },
-    
-    closeModal() {
-      this.selectedProduct = null;
-      this.selectedVariants = {};
-    },
-    
-    
+
     isSelectedVariant(attribute, value) {
-      return this.selectedVariants[attribute] === value
+      return this.selectedVariants[attribute] === value;
     },
     handleVariantSelection({ attribute, value }) {
       if (value === null) {
@@ -480,7 +671,7 @@ export default {
     },
 
     viewOrders() {
-      this.$emit('go-to-orders');
+      this.$emit("go-to-orders");
       this.closeModal();
     },
 
@@ -489,11 +680,10 @@ export default {
       this.selectedVariants = {};
     },
 
-
     isTokenExpired(token) {
       try {
         // Decode JWT token (simple decode, not verification)
-        const base64Payload = token.split('.')[1];
+        const base64Payload = token.split(".")[1];
         const payload = JSON.parse(atob(base64Payload));
 
         // Check if token is expired
@@ -506,14 +696,14 @@ export default {
     },
     handleTokenExpired() {
       // Clear stored authentication data
-      localStorage.removeItem('decilo_token');
-      localStorage.removeItem('decilo_user');
+      localStorage.removeItem("decilo_token");
+      localStorage.removeItem("decilo_user");
 
       // Emit event to parent component to handle logout
-      this.$emit('token-expired');
-    }
-  }
-}
+      this.$emit("token-expired");
+    },
+  },
+};
 </script>
 
 <style scoped>
@@ -675,7 +865,7 @@ export default {
 }
 
 .category-checkbox-item input[type="checkbox"]:checked + .checkmark::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 5px;
   top: 2px;
@@ -701,7 +891,7 @@ export default {
 }
 
 .product-catalog::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -734,9 +924,6 @@ export default {
   letter-spacing: 0.025em;
 }
 
-
-
-
 .products-grid {
   position: relative;
   z-index: 1;
@@ -756,7 +943,6 @@ export default {
   display: flex;
   flex-direction: column;
 }
-
 
 .product-card:hover {
   transform: translateY(-8px);
@@ -862,7 +1048,6 @@ export default {
   line-height: 1.5;
 }
 
-
 .product-actions {
   display: flex;
   gap: 12px;
@@ -888,7 +1073,7 @@ export default {
 }
 
 .details-btn::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -100%;
@@ -909,7 +1094,6 @@ export default {
   box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
 }
 
-
 .spinner {
   width: 20px;
   height: 20px;
@@ -920,10 +1104,13 @@ export default {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
-
 
 /* Loading styles */
 .loading-overlay {
@@ -942,7 +1129,6 @@ export default {
   border-radius: 20px;
 }
 
-
 .no-products {
   text-align: center;
   padding: 80px 32px;
@@ -951,7 +1137,7 @@ export default {
 }
 
 .no-products::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 50%;
@@ -970,8 +1156,6 @@ export default {
   margin: 0;
   font-weight: 500;
 }
-
-
 
 @media (max-width: 1024px) {
   .product-catalog {
@@ -995,7 +1179,6 @@ export default {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 16px;
   }
-
 }
 
 @media (max-width: 768px) {
@@ -1091,8 +1274,5 @@ export default {
   .product-details h3 {
     font-size: 15px;
   }
-
 }
-
-
 </style>

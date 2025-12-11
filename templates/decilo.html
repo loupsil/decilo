@@ -9,6 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader/dist/vue3-sfc-loader.js"></script>
+    <script src="https://unpkg.com/vue-i18n@9/dist/vue-i18n.global.prod.js"></script>
+    <script src="{{ url_for('static', filename='js/i18n-messages.js') }}"></script>
 </head>
 <body>
     <div id="app">
@@ -35,11 +37,20 @@
         }
 
         const { loadModule } = window['vue3-sfc-loader'];
+        const initialLocale = localStorage.getItem('decilo_locale') || 'fr';
+        const i18n = VueI18n.createI18n({
+            legacy: false,
+            locale: initialLocale,
+            fallbackLocale: 'en',
+            globalInjection: true,
+            messages: window.DeciloI18nMessages || {}
+        });
         const app = Vue.createApp({
             components: {
                 'decilo-portal': Vue.defineAsyncComponent(() => loadModule("{{ url_for('static', filename='vue/decilo_portal.vue') }}", options)),
             }
         });
+        app.use(i18n);
         app.mount('#app');
     </script>
 </body>

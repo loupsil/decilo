@@ -1,7 +1,7 @@
 <template>
   <div class="orders-container">
     <div class="orders-header">
-      <h2 class="orders-title">Your Orders</h2>
+      <h2 class="orders-title">{{ $t('orders.title') }}</h2>
     </div>
 
     <div v-if="isLoading" class="loading-state">
@@ -20,7 +20,7 @@
             <input
               type="text"
               v-model="searchQuery"
-              placeholder="Search orders..."
+              :placeholder="$t('orders.searchPlaceholder')"
               @input="filterOrders"
               class="search-input"
             >
@@ -29,23 +29,23 @@
 
         <div v-if="orders.length" class="orders-summary-inline">
           <div class="summary-card clickable" :class="{ active: summaryFilter === 'all' }" @click="setSummaryFilter('all')">
-            <span class="summary-label">Total Orders</span>
+            <span class="summary-label">{{ $t('orders.summary.total') }}</span>
             <span class="summary-value">{{ orders.length }}</span>
           </div>
           <div class="summary-card clickable" :class="{ active: summaryFilter === 'review' }" @click="setSummaryFilter('review')">
-            <span class="summary-label">In Review</span>
+            <span class="summary-label">{{ $t('orders.summary.review') }}</span>
             <span class="summary-value">{{ orders.filter(o => o && (o.manufacturing_state === null || o.manufacturing_state === undefined || o.manufacturing_state === '')).length }}</span>
           </div>
           <div class="summary-card clickable" :class="{ active: summaryFilter === 'queue' }" @click="setSummaryFilter('queue')">
-            <span class="summary-label">In Queue</span>
+            <span class="summary-label">{{ $t('orders.summary.queue') }}</span>
             <span class="summary-value">{{ orders.filter(o => o && o.manufacturing_state === 'draft').length }}</span>
           </div>
           <div class="summary-card clickable" :class="{ active: summaryFilter === 'progress' }" @click="setSummaryFilter('progress')">
-            <span class="summary-label">In Progress</span>
+            <span class="summary-label">{{ $t('orders.summary.progress') }}</span>
             <span class="summary-value">{{ orders.filter(o => o && (o.manufacturing_state === 'confirmed' || o.manufacturing_state === 'progress' || o.manufacturing_state === 'planned')).length }}</span>
           </div>
           <div class="summary-card clickable" :class="{ active: summaryFilter === 'completed' }" @click="setSummaryFilter('completed')">
-            <span class="summary-label">Completed</span>
+            <span class="summary-label">{{ $t('orders.summary.completed') }}</span>
             <span class="summary-value">{{ orders.filter(o => o && o.manufacturing_state === 'done').length }}</span>
           </div>
         </div>
@@ -63,10 +63,10 @@
             <div class="order-header">
               <div class="order-identity">
                 <div class="order-number-badge">
-                  <span class="order-number">#{{ order.number || 'Unknown' }}</span>
+                  <span class="order-number">{{ order.number ? '#' + order.number : $t('orders.unknown') }}</span>
                 </div>
                 <div class="order-datetime">
-                  <div class="order-date">{{ order.date ? formatDate(order.date) : 'Unknown date' }}</div>
+                  <div class="order-date">{{ order.date ? formatDate(order.date) : $t('orders.unknownDate') }}</div>
                   <div class="order-time">
                     {{ order.date ? formatTime(order.date) : '' }}
                     <span v-if="order.patient?.name" class="doc-filename" style="margin-left:8px;">{{ '• ' + order.patient.name + (order.patient?.customId ? ' (#' + order.patient.customId + ')' : '') }}</span>
@@ -87,11 +87,13 @@
         <div class="order-preview" v-if="selectedOrder">
           <div class="preview-header">
             <div class="preview-header-content">
-              <h3 class="preview-title">Order #{{ selectedOrder.number || 'Unknown' }}</h3>
+              <h3 class="preview-title">{{ $t('orders.orderTitle', { number: selectedOrder.number || $t('orders.unknown') }) }}</h3>
               <div v-if="selectedOrder.manufacturing_order_number" class="preview-manufacturing-order">
-                Manufacturing Order: {{ selectedOrder.manufacturing_order_number }}
+                {{ $t('orders.manufacturingOrder', { number: selectedOrder.manufacturing_order_number }) }}
               </div>
-              <div class="preview-date">{{ selectedOrder.date ? formatDate(selectedOrder.date) + ' at ' + formatTime(selectedOrder.date) : 'Unknown date' }}</div>
+              <div class="preview-date">
+                {{ selectedOrder.date ? $t('orders.dateTime', { date: formatDate(selectedOrder.date), time: formatTime(selectedOrder.date) }) : $t('orders.unknownDate') }}
+              </div>
             </div>
             <div class="preview-progress">
               <div class="mini-timeline-container">
@@ -103,19 +105,19 @@
                   <div class="mini-timeline-steps">
                     <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 0 ? 'active' : '']">
                       <span class="mini-dot"></span>
-                      <span class="mini-label">Review</span>
+                      <span class="mini-label">{{ $t('orders.progress.review') }}</span>
                     </div>
                     <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 1 ? 'active' : '']">
                       <span class="mini-dot"></span>
-                      <span class="mini-label">Queue</span>
+                      <span class="mini-label">{{ $t('orders.progress.queue') }}</span>
                     </div>
                     <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 2 ? 'active' : '']">
                       <span class="mini-dot"></span>
-                      <span class="mini-label">Progress</span>
+                      <span class="mini-label">{{ $t('orders.progress.progress') }}</span>
                     </div>
                     <div :class="['mini-t-step', productionStageIndex(selectedOrder.manufacturing_state) >= 3 ? 'active' : '']">
                       <span class="mini-dot"></span>
-                      <span class="mini-label">Complete</span>
+                      <span class="mini-label">{{ $t('orders.progress.completed') }}</span>
                     </div>
                   </div>
                 </div>
@@ -127,8 +129,11 @@
 
             <div class="preview-section" v-if="selectedOrder.products && selectedOrder.products.length">
               <div class="section-header" style="display:flex;align-items:center;justify-content:space-between;">
-                <h4 class="section-title">Order Items</h4>
-                <span class="products-count">{{ selectedOrder.products.length }} item{{ selectedOrder.products.length !== 1 ? 's' : '' }}</span>
+                <h4 class="section-title">{{ $t('orders.itemsTitle') }}</h4>
+                <span class="products-count">
+                  {{ selectedOrder.products.length }}
+                  {{ selectedOrder.products.length === 1 ? $t('orders.itemSingular') : $t('orders.itemPlural') }}
+                </span>
               </div>
               <div class="section-body">
                 <div class="products-list">
@@ -140,7 +145,7 @@
                     <div class="product-info">
                       <span class="product-name">{{ p.name }}</span>
                       <div class="product-meta">
-                        <span class="product-qty" v-if="p.quantity">Quantity: {{ p.quantity }}</span>
+                        <span class="product-qty" v-if="p.quantity">{{ $t('orders.quantity') }}: {{ p.quantity }}</span>
                         <span class="product-separator" v-if="p.quantity">•</span>
                         <span class="product-id">#{{ p.id }}</span>
                       </div>
@@ -159,19 +164,19 @@
               <!-- Documents -->
               <div class="preview-section">
                 <div class="section-header">
-                  <h4 class="section-title">Documents</h4>
+                  <h4 class="section-title">{{ $t('orders.documents') }}</h4>
                 </div>
                 <div class="section-body">
                   <div v-if="selectedOrderPatient?.id">
                     <div v-if="docsLoading" class="dropdown-loading">
                       <div class="loading-spinner-small"></div>
-                      <span>Loading documents...</span>
+                      <span>{{ $t('orders.loadingDocuments') }}</span>
                     </div>
                     <div v-else>
                       <div v-if="docsError" class="patient-validation-error">{{ docsError }}</div>
                       <ul v-else class="existing-docs-list">
                         <li>
-                          <strong>Right:</strong>
+                          <strong>{{ $t('orders.rightEar') }}</strong>
                           <template v-if="docs.right?.exists">
                             <a class="doc-link" href="#" @click.prevent="downloadDoc('right')">
                               <span class="doc-icon" aria-hidden="true">
@@ -185,11 +190,11 @@
                             </a>
                           </template>
                           <template v-else>
-                            <span>Not found</span>
+                            <span>{{ $t('orders.notFound') }}</span>
                           </template>
                         </li>
                         <li>
-                          <strong>Left:</strong>
+                          <strong>{{ $t('orders.leftEar') }}</strong>
                           <template v-if="docs.left?.exists">
                             <a class="doc-link" href="#" @click.prevent="downloadDoc('left')">
                               <span class="doc-icon" aria-hidden="true">
@@ -203,30 +208,30 @@
                             </a>
                           </template>
                           <template v-else>
-                            <span>Not found</span>
+                            <span>{{ $t('orders.notFound') }}</span>
                           </template>
                         </li>
                       </ul>
                     </div>
                   </div>
-                  <div v-else class="section-empty">No documents available</div>
+                  <div v-else class="section-empty">{{ $t('orders.noDocuments') }}</div>
                 </div>
               </div>
 
               <!-- Patient information -->
               <div class="preview-section">
                 <div class="section-header">
-                  <h4 class="section-title">Patient information</h4>
+                  <h4 class="section-title">{{ $t('orders.patientInfo') }}</h4>
                 </div>
                 <div class="section-body">
                   <div v-if="patientInfoLoading" class="dropdown-loading">
                     <div class="loading-spinner-small"></div>
-                    <span>Loading patient information...</span>
+                    <span>{{ $t('orders.loadingPatient') }}</span>
                   </div>
                   <div v-else class="products-list">
                     <div class="product-item">
                       <div class="product-info">
-                        <span class="product-name">Name</span>
+                        <span class="product-name">{{ $t('orders.name') }}</span>
                         <div class="product-meta">
                           <span class="product-id">{{ selectedOrderPatient?.name || '—' }}{{ selectedOrderPatient?.customId ? ' (#' + selectedOrderPatient.customId + ')' : '' }}</span>
                         </div>
@@ -244,18 +249,18 @@
               <!-- Notes -->
               <div class="preview-section">
                 <div class="section-header">
-                  <h4 class="section-title">Notes</h4>
+                  <h4 class="section-title">{{ $t('orders.notes') }}</h4>
                 </div>
                 <div class="section-body">
                   <div v-if="notesLoading" class="dropdown-loading">
                     <div class="loading-spinner-small"></div>
-                    <span>Loading notes...</span>
+                    <span>{{ $t('orders.loadingNotes') }}</span>
                   </div>
                   <div v-else>
                     <div v-if="selectedOrder.notes" class="patient-notes-box">
                       <div class="patient-notes-text" v-html="selectedOrder.notes"></div>
                     </div>
-                    <div v-else class="section-empty">No notes</div>
+                    <div v-else class="section-empty">{{ $t('orders.noNotes') }}</div>
                   </div>
                 </div>
               </div>
@@ -270,8 +275,8 @@
             <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
           </svg>
         </div>
-        <h3 class="empty-title">No orders found</h3>
-        <p class="empty-description">Your orders will appear here once you place them.</p>
+        <h3 class="empty-title">{{ $t('orders.emptyTitle') }}</h3>
+        <p class="empty-description">{{ $t('orders.emptyDescription') }}</p>
       </div>
     </div>
   </div>
@@ -447,10 +452,10 @@ export default {
     getDetailedProgressInfo(state) {
       const stageIndex = this.productionStageIndex(state)
       const stages = [
-        { name: 'Review', width: '16%', color: '#f59e0b' },
-        { name: 'Queue', width: '40%', color: '#ffffff' },
-        { name: 'Progress', width: '70%', color: '#8b5cf6' },
-        { name: 'Complete', width: '100%', color: '#10b981' }
+        { name: this.$t('orders.status.review'), width: '16%', color: '#f59e0b' },
+        { name: this.$t('orders.status.queue'), width: '40%', color: '#ffffff' },
+        { name: this.$t('orders.status.progress'), width: '70%', color: '#8b5cf6' },
+        { name: this.$t('orders.status.completed'), width: '100%', color: '#10b981' }
       ]
       return stages[stageIndex] || stages[0]
     },
@@ -463,10 +468,10 @@ export default {
     },
     formatStatus(state) {
       const s = (state || '').toLowerCase()
-      if (s === 'done') return 'Completed'
-      if (s === 'confirmed' || s === 'progress' || s === 'planned') return 'In Progress'
-      if (s === 'draft') return 'In Queue'
-      return 'In Review'
+      if (s === 'done') return this.$t('orders.status.completed')
+      if (s === 'confirmed' || s === 'progress' || s === 'planned') return this.$t('orders.status.progress')
+      if (s === 'draft') return this.$t('orders.status.queue')
+      return this.$t('orders.status.review')
     },
     async fetchOrders() {
       this.isLoading = true

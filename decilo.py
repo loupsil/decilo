@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, Response
+from flask import Blueprint, jsonify, request, Response, g
 import xmlrpc.client
 import os
 from dotenv import load_dotenv
@@ -7,7 +7,9 @@ import jwt
 from datetime import datetime, timedelta
 from functools import wraps
 import base64
+import imghdr
 import json
+import time
 
 #  Configure logging
 logging.basicConfig(
@@ -32,6 +34,72 @@ ODOO_API_KEY = os.getenv('DECILO_ODOO_API_KEY')
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key')  # Change in production
 JWT_EXPIRATION_HOURS = 24
 
+# Simple in-memory caches to cut down on repeated Odoo RPCs
+VARIANT_TEMPLATE_CACHE_TTL = 30 * 60  # 30 minutes
+VARIANT_IMAGE_CACHE_TTL = 30 * 60
+VARIANT_TEMPLATE_CACHE = {}
+VARIANT_IMAGE_CACHE = {}
+
+# Language mapping helpers
+UI_TO_ODOO_LANG = {
+    'en': 'en_US',
+    'fr': 'fr_BE',  # use installed FR locale
+    'nl': 'nl_NL',
+}
+
+ODOO_TO_UI_LANG = {
+    'en_US': 'en',
+    'en_GB': 'en',
+    'fr_FR': 'fr',
+    'fr_BE': 'fr',
+    'nl_NL': 'nl',
+    'nl_BE': 'nl',
+}
+
+def normalize_to_odoo_locale(locale_value):
+    """Normalize various locale inputs to an Odoo-friendly locale code."""
+    default_locale = UI_TO_ODOO_LANG.get('en', 'en_US')
+    if not locale_value:
+        return default_locale
+    val = str(locale_value).strip()
+    lower_val = val.lower()
+
+    # If already an Odoo code
+    for v in UI_TO_ODOO_LANG.values():
+        if lower_val == v.lower():
+            return v
+
+    # If UI shorthand
+    mapped = UI_TO_ODOO_LANG.get(lower_val)
+    if mapped:
+        return mapped
+
+    # Accept formats like en-us, fr-be
+    if '-' in lower_val:
+        normalized = lower_val.replace('-', '_')
+        for v in UI_TO_ODOO_LANG.values():
+            if normalized == v.lower():
+                return v
+
+    return default_locale
+
+def normalize_to_ui_language(locale_value):
+    """Normalize an Odoo locale to UI shorthand (en/fr/nl), defaulting to fr."""
+    if not locale_value:
+        return 'fr'
+    val = str(locale_value).strip()
+    lower_val = val.lower().replace('-', '_')
+    for odoo_lang, ui_lang in ODOO_TO_UI_LANG.items():
+        if lower_val == odoo_lang.lower():
+            return ui_lang
+    if lower_val in UI_TO_ODOO_LANG:
+        return lower_val
+    return 'fr'
+
+def get_request_locale():
+    """Return the current request locale (Odoo code), defaulting to en_US."""
+    return getattr(g, 'decilo_locale', 'en_US')
+
 def create_token(user_data):
     """Create a JWT token for the user"""
     try:
@@ -41,6 +109,8 @@ def create_token(user_data):
             'id': user_data['id'],
             'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
         }
+        if user_data.get('lang'):
+            payload['lang'] = user_data['lang']
         token = jwt.encode(payload, JWT_SECRET_KEY, algorithm='HS256')
         return token
     except Exception as e:
@@ -80,11 +150,33 @@ def get_odoo_common():
         logger.error(f"Failed to connect to Odoo common endpoint: {str(e)}")
         raise
 
+class OdooModelsProxy:
+    """Wraps the Odoo models proxy to inject request locale into context."""
+    def __init__(self, models_proxy, locale_provider):
+        self._models = models_proxy
+        self._locale_provider = locale_provider
+
+    def execute_kw(self, db, uid, pwd, model, method, args=None, kwargs=None):
+        args = args or []
+        kwargs = kwargs or {}
+        context = kwargs.get('context')
+        if not isinstance(context, dict):
+            context = {}
+        context = {**context}
+        lang = self._locale_provider()
+        if lang:
+            context.setdefault('lang', lang)
+        kwargs['context'] = context
+        return self._models.execute_kw(db, uid, pwd, model, method, args, kwargs)
+
+    def __getattr__(self, item):
+        return getattr(self._models, item)
+
 def get_odoo_models():
-    """Get Odoo models endpoint"""
+    """Get Odoo models endpoint with locale-aware wrapper"""
     try:
-        models = xmlrpc.client.ServerProxy(f'{ODOO_URL}/xmlrpc/2/object', allow_none=True)
-        return models
+        base_models = xmlrpc.client.ServerProxy(f'{ODOO_URL}/xmlrpc/2/object', allow_none=True)
+        return OdooModelsProxy(base_models, get_request_locale)
     except Exception as e:
         logger.error(f"Failed to connect to Odoo models endpoint: {str(e)}")
         raise
@@ -100,6 +192,30 @@ def get_uid():
     except Exception as e:
         logger.error(f"Failed to authenticate with Odoo: {str(e)}")
         raise
+
+@decilo_bp.before_app_request
+def set_request_locale():
+    """Middleware-style hook to determine locale for the current request."""
+    locale = None
+
+    # Header or query param override
+    header_locale = request.headers.get('X-Locale') or request.args.get('locale')
+    if header_locale:
+        locale = header_locale
+
+    # Fallback to JWT claim (without failing the request on decode issues)
+    if not locale:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            try:
+                payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'], options={'verify_exp': False})
+                locale = payload.get('lang')
+            except Exception:
+                locale = None
+
+    g.decilo_locale = normalize_to_odoo_locale(locale)
+    logger.info(f"[locale] Selected locale for request: {g.decilo_locale}")
 
 @decilo_bp.route('/decilo-api/customer-login', methods=['POST'])
 def customer_login():
@@ -143,14 +259,17 @@ def customer_login():
                 'res.users',
                 'read',
                 [auth_uid],
-                {'fields': ['name', 'email', 'partner_id']}
+                {'fields': ['name', 'email', 'partner_id', 'lang']}
             )[0]
+
+            user_lang = normalize_to_ui_language(user.get('lang'))
 
             # Create user data
             user_data = {
                 'id': user['partner_id'][0],
                 'name': user['name'],
-                'email': user['email'] or email
+                'email': user['email'] or email,
+                'lang': user_lang
             }
 
             # Create JWT token
@@ -169,6 +288,7 @@ def customer_login():
         error_msg = f"Error in customer login: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
 
 @decilo_bp.route('/decilo-api/customer-signup', methods=['POST'])
 def customer_signup():
@@ -288,16 +408,29 @@ class OdooXMLRPCClient(OdooClient):
     def _get_models(self):
         if not self._models:
             self._models = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object', allow_none=True)
-        return self._models
+        return OdooModelsProxy(self._models, get_request_locale)
     
-    def search_products(self, domain=None, fields=None, offset=0, limit=None, order=None):
+    def search_products(self, domain=None, fields=None, offset=0, limit=None, order=None, include_variants=False):
         uid = self.authenticate()
         models = self._get_models()
         
         if domain is None:
             domain = []
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
+            # Skinny payload for list view; images are fetched separately
+            fields = [
+                'name',
+                'list_price',
+                'default_code',
+                'categ_id',
+                'description_sale',
+                'description_ecommerce',
+                'x_studio_is_published_b2audio'
+            ]
+            if include_variants:
+                fields.append('attribute_line_ids')
+        elif include_variants and 'attribute_line_ids' not in fields:
+            fields.append('attribute_line_ids')
             
         # First get product IDs
         product_ids = models.execute_kw(
@@ -324,47 +457,52 @@ class OdooXMLRPCClient(OdooClient):
             {'fields': fields}
         )
         
-        # Add variant information for each product
+        if not include_variants:
+            return products
+
+        # Add variant information for each product when requested
         for product in products:
-            if product.get('attribute_line_ids'):
-                # Get attribute lines details
-                attr_lines = models.execute_kw(
+            if not product.get('attribute_line_ids'):
+                product['variants'] = []
+                continue
+
+            attr_lines = models.execute_kw(
+                self.db, uid, self.api_key,
+                'product.template.attribute.line',
+                'read',
+                [product['attribute_line_ids']],
+                {'fields': ['attribute_id', 'value_ids']}
+            )
+            
+            variants = []
+            for line in attr_lines:
+                values = models.execute_kw(
                     self.db, uid, self.api_key,
-                    'product.template.attribute.line',
+                    'product.attribute.value',
                     'read',
-                    [product['attribute_line_ids']],
-                    {'fields': ['attribute_id', 'value_ids']}
+                    [line['value_ids']],
+                    {'fields': ['name']}
                 )
                 
-                variants = []
-                for line in attr_lines:
-                    # Get attribute values
-                    values = models.execute_kw(
-                        self.db, uid, self.api_key,
-                        'product.attribute.value',
-                        'read',
-                        [line['value_ids']],
-                        {'fields': ['name']}
-                    )
-                    
-                    variants.append({
-                        'attribute': line['attribute_id'][1],  # [1] contains the name
-                        'values': [val['name'] for val in values]
-                    })
-                
-                # Add variants to product data
-                product['variants'] = variants
-            else:
-                product['variants'] = []
+                variants.append({
+                    'attribute': line['attribute_id'][1],  # [1] contains the name
+                    'values': [val['name'] for val in values]
+                })
+            
+            product['variants'] = variants
         
         return products
     
-    def read_product(self, product_id, fields=None):
+    def read_product(self, product_id, fields=None, include_image=True):
         uid = self.authenticate()
         models = self._get_models()
 
         if fields is None:
-            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'image_1920', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
+            fields = ['name', 'list_price', 'description_ecommerce', 'default_code', 'attribute_line_ids', 'categ_id', 'x_studio_is_published_b2audio']
+            if include_image:
+                fields.append('image_1920')
+        elif not include_image and 'image_1920' in fields:
+            fields = [f for f in fields if f != 'image_1920']
             
         # First get the product with basic fields and attribute lines
         product = models.execute_kw(
@@ -382,7 +520,7 @@ class OdooXMLRPCClient(OdooClient):
         
         # If product has attribute lines, get the variants information
         if product.get('attribute_line_ids'):
-            # Get attribute lines details
+            # Get attribute lines details in one call
             attr_lines = models.execute_kw(
                 self.db, uid, self.api_key,
                 'product.template.attribute.line',
@@ -390,21 +528,29 @@ class OdooXMLRPCClient(OdooClient):
                 [product['attribute_line_ids']],
                 {'fields': ['attribute_id', 'value_ids']}
             )
-            
-            variants = []
+
+            # Collect all value_ids to batch fetch values once
+            all_value_ids = []
             for line in attr_lines:
-                # Get attribute values
-                values = models.execute_kw(
+                all_value_ids.extend(line.get('value_ids', []))
+            unique_value_ids = list(set(all_value_ids))
+
+            values_by_id = {}
+            if unique_value_ids:
+                value_records = models.execute_kw(
                     self.db, uid, self.api_key,
                     'product.attribute.value',
                     'read',
-                    [line['value_ids']],
+                    [unique_value_ids],
                     {'fields': ['name']}
                 )
-                
+                values_by_id = {rec['id']: rec['name'] for rec in value_records}
+
+            variants = []
+            for line in attr_lines:
                 variants.append({
                     'attribute': line['attribute_id'][1],  # [1] contains the name
-                    'values': [val['name'] for val in values]
+                    'values': [values_by_id[val_id] for val_id in line.get('value_ids', []) if val_id in values_by_id]
                 })
             
             # Add variants to product data
@@ -457,6 +603,244 @@ class OdooXMLRPCClient(OdooClient):
             })
             
         return variants
+
+    def _image_field_for_size(self, size):
+        """Map friendly size name to Odoo image field"""
+        size_map = {
+            'thumb': 'image_256',
+            'small': 'image_512',
+            'medium': 'image_512',
+            'large': 'image_1024',
+            'full': 'image_1920',
+            'original': 'image_1920'
+        }
+        return size_map.get(size, 'image_512')
+
+    def get_product_images(self, product_ids, size='medium'):
+        """Fetch images for a list of product IDs, preserving input order"""
+        if not product_ids:
+            return []
+
+        uid = self.authenticate()
+        models = self._get_models()
+        size_field = self._image_field_for_size(size)
+
+        records = models.execute_kw(
+            self.db, uid, self.api_key,
+            'product.template',
+            'read',
+            [product_ids],
+            {'fields': [size_field]}
+        )
+
+        # Map by id to rebuild in requested order
+        by_id = {rec['id']: rec.get(size_field) for rec in records}
+        images = []
+        for pid in product_ids:
+            images.append({
+                'id': pid,
+                'image': by_id.get(pid)
+            })
+        return images
+
+def resolve_variant_product(models, uid, product_template_id, selected_variants):
+    """Resolve product.product ID for a template + selected variant names."""
+    variant_product_id = None
+    ptav_ids = []
+
+    def get_attribute_id(attribute_name: str):
+        attr_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.attribute', 'search',
+            [[('name', '=', attribute_name)]],
+            {'limit': 1}
+        )
+        return attr_ids[0] if attr_ids else None
+
+    def get_attribute_value_id(attribute_id: int, value_name: str):
+        value_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.attribute.value', 'search',
+            [[('name', '=', value_name), ('attribute_id', '=', attribute_id)]],
+            {'limit': 1}
+        )
+        return value_ids[0] if value_ids else None
+
+    def get_ptav_id(product_template_id: int, product_attribute_value_id: int):
+        ptav_ids_found = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template.attribute.value', 'search',
+            [[('product_tmpl_id', '=', product_template_id), ('product_attribute_value_id', '=', product_attribute_value_id)]],
+            {'limit': 1}
+        )
+        return ptav_ids_found[0] if ptav_ids_found else None
+
+    if not selected_variants:
+        tmpl_rec = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template', 'read',
+            [product_template_id],
+            {'fields': ['product_variant_id']}
+        )
+        if tmpl_rec and tmpl_rec[0].get('product_variant_id'):
+            variant_product_id = tmpl_rec[0]['product_variant_id'][0]
+    else:
+        for attribute_name, value_name in selected_variants.items():
+            attr_id = get_attribute_id(attribute_name)
+            if not attr_id:
+                return None, ptav_ids, f"Unknown attribute: {attribute_name}"
+
+            val_id = get_attribute_value_id(attr_id, value_name)
+            if not val_id:
+                return None, ptav_ids, f"Unknown value '{value_name}' for attribute '{attribute_name}'"
+
+            ptav_id = get_ptav_id(product_template_id, val_id)
+            if not ptav_id:
+                return None, ptav_ids, f"Option '{attribute_name}: {value_name}' not available for this product"
+            ptav_ids.append(ptav_id)
+
+        candidate_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.product', 'search',
+            [[('product_tmpl_id', '=', product_template_id)]],
+        )
+
+        if candidate_ids:
+            candidates = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.product', 'read',
+                [candidate_ids],
+                {'fields': ['product_template_attribute_value_ids', 'display_name']}
+            )
+            needed = set(ptav_ids)
+
+            for c in candidates:
+                c_vals = set(c.get('product_template_attribute_value_ids', []))
+                if needed.issubset(c_vals):
+                    variant_product_id = c['id']
+                    break
+
+    return variant_product_id, ptav_ids, None
+
+def get_template_variant_cache(models, uid, product_template_id):
+    """Build or return cached per-template data for fast variant resolution."""
+    now = time.time()
+    cached = VARIANT_TEMPLATE_CACHE.get(product_template_id)
+    if cached and cached.get('expires_at', 0) > now:
+        return cached
+
+    # Fetch all PTAVs for the template
+    ptav_ids = models.execute_kw(
+        ODOO_DB, uid, ODOO_API_KEY,
+        'product.template.attribute.value', 'search',
+        [[('product_tmpl_id', '=', product_template_id)]]
+    )
+    ptav_records = models.execute_kw(
+        ODOO_DB, uid, ODOO_API_KEY,
+        'product.template.attribute.value', 'read',
+        [ptav_ids],
+        {'fields': ['id', 'product_attribute_value_id']}
+    ) if ptav_ids else []
+
+    # Gather PAV metadata for name/attribute resolution
+    pav_ids = set()
+    for rec in ptav_records or []:
+        pav = rec.get('product_attribute_value_id')
+        pav_id = pav[0] if isinstance(pav, (list, tuple)) else pav
+        if pav_id:
+            pav_ids.add(pav_id)
+
+    pav_records = models.execute_kw(
+        ODOO_DB, uid, ODOO_API_KEY,
+        'product.attribute.value', 'read',
+        [list(pav_ids)],
+        {'fields': ['id', 'name', 'attribute_id']}
+    ) if pav_ids else []
+    pav_meta = {rec['id']: rec for rec in pav_records or []}
+
+    attr_ids = {rec['attribute_id'][0] for rec in pav_records or [] if rec.get('attribute_id')}
+    attr_records = models.execute_kw(
+        ODOO_DB, uid, ODOO_API_KEY,
+        'product.attribute', 'read',
+        [list(attr_ids)],
+        {'fields': ['id', 'name']}
+    ) if attr_ids else []
+    attr_name_by_id = {rec['id']: rec.get('name') for rec in attr_records or []}
+
+    # Build map: (attribute_name, value_name) -> PTAV id (lowercased for lookup)
+    attr_val_to_ptav = {}
+    for rec in ptav_records or []:
+        pav = rec.get('product_attribute_value_id')
+        pav_id = pav[0] if isinstance(pav, (list, tuple)) else pav
+        pav_info = pav_meta.get(pav_id, {})
+        attr_id = pav_info.get('attribute_id')
+        attr_id = attr_id[0] if isinstance(attr_id, (list, tuple)) else attr_id
+        attr_name = attr_name_by_id.get(attr_id, '')
+        val_name = pav_info.get('name', '')
+        key = (attr_name.strip().lower(), val_name.strip().lower())
+        if key[0] and key[1]:
+            attr_val_to_ptav[key] = rec['id']
+
+    # Cache candidate variants once
+    candidate_ids = models.execute_kw(
+        ODOO_DB, uid, ODOO_API_KEY,
+        'product.product', 'search',
+        [[('product_tmpl_id', '=', product_template_id)]],
+    )
+    candidate_records = models.execute_kw(
+        ODOO_DB, uid, ODOO_API_KEY,
+        'product.product', 'read',
+        [candidate_ids],
+        {'fields': ['product_template_attribute_value_ids']}
+    ) if candidate_ids else []
+    candidates = [{
+        'id': rec['id'],
+        'ptavs': set(rec.get('product_template_attribute_value_ids', []))
+    } for rec in candidate_records or []]
+
+    cached = {
+        'attr_val_to_ptav': attr_val_to_ptav,
+        'candidates': candidates,
+        'expires_at': now + VARIANT_TEMPLATE_CACHE_TTL
+    }
+    VARIANT_TEMPLATE_CACHE[product_template_id] = cached
+    return cached
+
+def resolve_variant_from_cache(models, uid, product_template_id, selected_variants):
+    """Resolve variant using cached per-template metadata to avoid extra RPCs."""
+    cache = get_template_variant_cache(models, uid, product_template_id)
+    needed_ptavs = []
+    attr_val_to_ptav = cache.get('attr_val_to_ptav', {})
+    candidates = cache.get('candidates', [])
+
+    # No selections: use template default variant if possible
+    if not selected_variants:
+        tmpl_rec = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template', 'read',
+            [product_template_id],
+            {'fields': ['product_variant_id']}
+        )
+        if tmpl_rec and tmpl_rec[0].get('product_variant_id'):
+            return tmpl_rec[0]['product_variant_id'][0], needed_ptavs, None
+        # Fall back to first candidate as a last resort
+        if candidates:
+            return candidates[0].get('id'), needed_ptavs, None
+
+    for attr_name, val_name in (selected_variants or {}).items():
+        key = (str(attr_name).strip().lower(), str(val_name).strip().lower())
+        ptav = attr_val_to_ptav.get(key)
+        if not ptav:
+            return None, needed_ptavs, f"Option '{attr_name}: {val_name}' not available for this product"
+        needed_ptavs.append(ptav)
+
+    needed = set(needed_ptavs)
+    for c in candidates:
+        ptavs = c.get('ptavs') or set()
+        if needed.issubset(ptavs):
+            return c['id'], needed_ptavs, None
+
+    return None, needed_ptavs, "Could not resolve product variant for the selected options"
 
 # Initialize the Odoo client
 odoo_client = OdooXMLRPCClient(ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_API_KEY)
@@ -544,12 +928,76 @@ def get_products(current_user):
         logger.error(error_msg, exc_info=True)
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
+
+@decilo_bp.route('/decilo-api/product-images', methods=['GET'])
+@token_required
+def get_product_images_endpoint(current_user):
+    """
+    Fetch images for a list of product IDs in the order provided.
+    Query params:
+      - ids: comma-separated product IDs (required)
+      - size: thumb | small | medium | large | full | original (default: medium)
+    """
+    try:
+        ids_param = request.args.get('ids')
+        size = request.args.get('size', 'medium')
+
+        if not ids_param:
+            return jsonify({'error': 'ids query parameter is required'}), 400
+
+        try:
+            product_ids = [int(pid) for pid in ids_param.split(',') if pid.strip()]
+        except ValueError:
+            return jsonify({'error': 'ids must be comma-separated integers'}), 400
+
+        if not product_ids:
+            return jsonify({'error': 'ids must contain at least one product id'}), 400
+
+        images = odoo_client.get_product_images(product_ids, size=size)
+        return jsonify({
+            'size': size,
+            'count': len(images),
+            'images': images
+        })
+
+    except Exception as e:
+        error_msg = f"Error fetching product images: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
+
+@decilo_bp.route('/decilo-api/products/<int:product_id>/image', methods=['GET'])
+@token_required
+def get_product_image(current_user, product_id):
+    """Fetch a single product image at the requested size"""
+    try:
+        size = request.args.get('size', 'medium')
+        images = odoo_client.get_product_images([product_id], size=size)
+        image_data = images[0]['image'] if images else None
+
+        if not image_data:
+            return jsonify({'error': 'Image not found', 'code': 'not_found'}), 404
+
+        binary = base64.b64decode(image_data)
+        image_type = imghdr.what(None, h=binary) or 'png'
+        mimetype = f'image/{image_type}'
+
+        return Response(binary, mimetype=mimetype)
+
+    except Exception as e:
+        error_msg = f"Error fetching image for product {product_id}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
 @decilo_bp.route('/decilo-api/products/<int:product_id>', methods=['GET'])
 @token_required
 def get_product(current_user, product_id):
     """Get detailed information about a specific product"""
     try:
-        product = odoo_client.read_product(product_id)
+        include_image_param = request.args.get('include_image', 'true').lower()
+        include_image = include_image_param not in ['false', '0', 'no']
+
+        product = odoo_client.read_product(product_id, include_image=include_image)
         
         if not product:
             return jsonify({'error': 'Product not found', 'code': 'not_found'}), 404
@@ -1472,6 +1920,97 @@ def get_product_variant_exclusions(current_user, product_id: int):
         logger.error(error_msg, exc_info=True)
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
+@decilo_bp.route('/decilo-api/products/<int:product_id>/variant-image', methods=['POST'])
+@token_required
+def get_variant_image(current_user, product_id: int):
+    """Return the variant-specific image (or fallback template image) for a selection."""
+    try:
+        uid = get_uid()
+        models = get_odoo_models()
+        payload = request.get_json(silent=True) or {}
+        selected_variants = payload.get('selected_variants') or {}
+        if selected_variants and not isinstance(selected_variants, dict):
+            return jsonify({'error': 'selected_variants must be a JSON object'}), 400
+
+        size = payload.get('size', 'full')
+        cache_key = (product_id, size, json.dumps(sorted(selected_variants.items())))
+        now = time.time()
+
+        # Fast path: reuse fully cached payload for this selection/size
+        cached_payload = VARIANT_IMAGE_CACHE.get(cache_key)
+        if cached_payload and cached_payload.get('expires_at', 0) > now and cached_payload.get('payload'):
+            return jsonify(cached_payload['payload'])
+
+        # Resolve variant using cached template metadata to avoid repeated RPCs
+        variant_product_id, ptav_ids, variant_error = resolve_variant_from_cache(models, uid, product_id, selected_variants)
+        if variant_error:
+            return jsonify({'error': variant_error}), 400
+
+        size_field = odoo_client._image_field_for_size(size)
+        image_b64 = None
+        source = 'variant'
+
+        # Check variant-level image cache
+        variant_cache_key = (variant_product_id, size_field)
+        variant_cached = VARIANT_IMAGE_CACHE.get(variant_cache_key)
+        if variant_cached and variant_cached.get('expires_at', 0) > now:
+            image_b64 = variant_cached.get('image')
+
+        if variant_product_id and not image_b64:
+            variant_image = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.product', 'read',
+                [[variant_product_id]],
+                {'fields': [size_field]}
+            )
+            if variant_image and variant_image[0].get(size_field):
+                image_b64 = variant_image[0].get(size_field)
+                VARIANT_IMAGE_CACHE[variant_cache_key] = {
+                    'image': image_b64,
+                    'expires_at': now + VARIANT_IMAGE_CACHE_TTL,
+                    'payload': None
+                }
+
+        if not image_b64:
+            source = 'product'
+            template_cache_key = ('template', product_id, size_field)
+            template_cached = VARIANT_IMAGE_CACHE.get(template_cache_key)
+            if template_cached and template_cached.get('expires_at', 0) > now:
+                image_b64 = template_cached.get('image')
+            else:
+                template_images = odoo_client.get_product_images([product_id], size=size)
+                if template_images and template_images[0].get('image'):
+                    image_b64 = template_images[0].get('image')
+                    VARIANT_IMAGE_CACHE[template_cache_key] = {
+                        'image': image_b64,
+                        'expires_at': now + VARIANT_IMAGE_CACHE_TTL,
+                        'payload': None
+                    }
+
+        if not image_b64:
+            return jsonify({'error': 'Image not found', 'variant_product_id': variant_product_id}), 404
+
+        image_url = f"data:image/png;base64,{image_b64}"
+        payload = {
+            'product_id': product_id,
+            'variant_product_id': variant_product_id,
+            'image': image_url,
+            'ptav_ids': ptav_ids,
+            'source': source,
+            'size': size
+        }
+
+        VARIANT_IMAGE_CACHE[cache_key] = {
+            'payload': payload,
+            'expires_at': now + VARIANT_IMAGE_CACHE_TTL,
+            'image': image_b64
+        }
+        return jsonify(payload)
+    except Exception as e:
+        error_msg = f"Error fetching variant image for product {product_id}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
 @decilo_bp.route('/decilo-api/orders/<int:order_id>/ear-impressions/download', methods=['GET'])
 @token_required
 def download_order_ear_impression(current_user, order_id: int):
@@ -1644,99 +2183,11 @@ def create_order(current_user):
                 patient_info = None
 
         # Resolve correct product.product (variant) for the template and selected variant values
-        variant_product_id = None
-
-        # Helpers to map attribute/value names to PTAV ids
-        def get_attribute_id(attribute_name: str):
-            attr_ids = models.execute_kw(
-                ODOO_DB, uid, ODOO_API_KEY,
-                'product.attribute', 'search',
-                [[('name', '=', attribute_name)]],
-                {'limit': 1}
-            )
-            return attr_ids[0] if attr_ids else None
-
-        def get_attribute_value_id(attribute_id: int, value_name: str):
-            value_ids = models.execute_kw(
-                ODOO_DB, uid, ODOO_API_KEY,
-                'product.attribute.value', 'search',
-                [[('name', '=', value_name), ('attribute_id', '=', attribute_id)]],
-                {'limit': 1}
-            )
-            return value_ids[0] if value_ids else None
-
-        def get_ptav_id(product_template_id: int, product_attribute_value_id: int):
-            # product.template.attribute.value record that binds template + attribute value
-            ptav_ids = models.execute_kw(
-                ODOO_DB, uid, ODOO_API_KEY,
-                'product.template.attribute.value', 'search',
-                [[('product_tmpl_id', '=', product_template_id), ('product_attribute_value_id', '=', product_attribute_value_id)]],
-                {'limit': 1}
-            )
-            return ptav_ids[0] if ptav_ids else None
-
-        # If no variants were provided, attempt to use the default variant of the template
-        if not selected_variants:
-            tmpl_rec = models.execute_kw(
-                ODOO_DB, uid, ODOO_API_KEY,
-                'product.template', 'read',
-                [product_template_id],
-                {'fields': ['product_variant_id']}
-            )
-            if tmpl_rec and tmpl_rec[0].get('product_variant_id'):
-                variant_product_id = tmpl_rec[0]['product_variant_id'][0]
-        else:
-            # Compute the set of PTAV ids corresponding to selected variants
-            ptav_ids = []
-            logger.info(f"🔍 Resolving variants for product_template_id={product_template_id}")
-            logger.info(f"📋 Selected variants: {selected_variants}")
-            
-            for attribute_name, value_name in selected_variants.items():
-                attr_id = get_attribute_id(attribute_name)
-                if not attr_id:
-                    return jsonify({'error': f"Unknown attribute: {attribute_name}"}), 400
-                logger.info(f"   ✓ Found attribute '{attribute_name}' -> ID {attr_id}")
-                
-                val_id = get_attribute_value_id(attr_id, value_name)
-                if not val_id:
-                    return jsonify({'error': f"Unknown value '{value_name}' for attribute '{attribute_name}'"}), 400
-                logger.info(f"   ✓ Found value '{value_name}' -> ID {val_id}")
-                
-                ptav_id = get_ptav_id(product_template_id, val_id)
-                if not ptav_id:
-                    return jsonify({'error': f"Option '{attribute_name}: {value_name}' not available for this product"}), 400
-                logger.info(f"   ✓ Found PTAV (Product Template Attribute Value) -> ID {ptav_id}")
-                ptav_ids.append(ptav_id)
-
-            # Find candidate variants for the template, then pick the one containing all selected PTAVs
-            logger.info(f"🔎 Searching for candidate variants with PTAVs: {ptav_ids}")
-            candidate_ids = models.execute_kw(
-                ODOO_DB, uid, ODOO_API_KEY,
-                'product.product', 'search',
-                [[('product_tmpl_id', '=', product_template_id)]],
-            )
-            logger.info(f"📦 Found {len(candidate_ids)} candidate variants for this template")
-            
-            if candidate_ids:
-                candidates = models.execute_kw(
-                    ODOO_DB, uid, ODOO_API_KEY,
-                    'product.product', 'read',
-                    [candidate_ids],
-                    {'fields': ['product_template_attribute_value_ids', 'display_name']}
-                )
-                needed = set(ptav_ids)
-                logger.info(f"🎯 Looking for a variant with PTAVs: {needed}")
-                
-                for c in candidates:
-                    c_vals = set(c.get('product_template_attribute_value_ids', []))
-                    logger.info(f"   Candidate '{c.get('display_name')}' (ID {c['id']}) has PTAVs: {c_vals}")
-                    if needed.issubset(c_vals):
-                        logger.info(f"   ✅ Match found! Using variant ID {c['id']}")
-                        variant_product_id = c['id']
-                        break
-                    else:
-                        missing = needed - c_vals
-                        logger.info(f"      ❌ Missing PTAVs: {missing}")
+        variant_product_id, ptav_ids, variant_error = resolve_variant_product(
+            models, uid, product_template_id, selected_variants
+        )
+        if variant_error:
+            return jsonify({'error': variant_error}), 400
 
         if not variant_product_id:
             logger.error(f"❌ Could not resolve product variant. Needed PTAVs: {ptav_ids}")

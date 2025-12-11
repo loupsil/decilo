@@ -16,8 +16,8 @@
             alt="Decilo Logo" 
             class="login-logo"
           >
-          <h2>Portal for business customers</h2>
-          <p class="login-subtitle">Welcome to the new decilo expert world</p>
+          <h2>{{ $t('login.title') }}</h2>
+          <p class="login-subtitle">{{ $t('login.subtitle') }}</p>
         </div>
         <form @submit.prevent="login" class="login-form">
           <div class="form-group">
@@ -26,7 +26,7 @@
                 id="email"
                 type="email"
                 v-model="email"
-                placeholder="Enter your email address"
+                :placeholder="$t('login.emailPlaceholder')"
                 required
                 autocomplete="email"
               >
@@ -38,17 +38,17 @@
                 id="password"
                 :type="showPassword ? 'text' : 'password'"
                 v-model="password"
-                placeholder="Enter your password"
+                :placeholder="$t('login.passwordPlaceholder')"
                 required
                 autocomplete="current-password"
               >
             </div>
           </div>
           <button type="submit" class="login-button">
-            Sign In
+            {{ $t('login.signIn') }}
           </button>
           <p class="support-link">
-            Having trouble signing in? Contact <a href="mailto:support@decilo.be">support@decilo.be</a>
+            {{ $t('login.supportPrefix') }} <a href="mailto:support@decilo.be">support@decilo.be</a>
           </p>
           <p v-if="error" class="error-message">{{ error }}</p>
         </form>
@@ -70,26 +70,56 @@
               :class="{ active: activeTab === 'products' }"
               @click="activeTab = 'products'"
             >
-              Products
+              {{ $t('nav.products') }}
             </button>
             <button 
               class="tab-btn" 
               :class="{ active: activeTab === 'orders' }"
               @click="activeTab = 'orders'"
             >
-              Orders
+              {{ $t('nav.orders') }}
             </button>
           </div>
           <div class="profile-menu">
             <div class="profile-icon" @click="toggleProfileMenu">
               <span class="profile-initial">{{ customerInfo.name?.charAt(0).toUpperCase() }}</span>
-              <div v-if="showProfileMenu" class="profile-dropdown">
+              <div v-if="showProfileMenu" class="profile-dropdown" @click.stop>
                 <div class="profile-info">
                   <strong>{{ customerInfo.name }}</strong>
                   <span>{{ customerInfo.email }}</span>
                 </div>
+                <div class="profile-language">
+                  <div class="language-label">{{ $t('nav.language') }}</div>
+                  <button class="language-select" @click.stop="toggleLanguageDropdown">
+                    <span class="language-select-inner">
+                      <span
+                        class="language-flag"
+                        :class="languageOptions.find(opt => opt.value === selectedLanguage)?.flagClass"
+                        aria-hidden="true"
+                      ></span>
+                      <span>{{ languageOptions.find(opt => opt.value === selectedLanguage)?.label }}</span>
+                    </span>
+                    <svg class="language-chevron" :class="{ open: isLanguageOpen }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="6,9 12,15 18,9"></polyline>
+                    </svg>
+                  </button>
+                  <div v-if="isLanguageOpen" class="language-options">
+                    <button
+                      v-for="option in languageOptions"
+                      :key="option.value"
+                      class="language-option"
+                      :class="{ active: option.value === selectedLanguage }"
+                      @click.stop="selectLanguage(option.value)"
+                    >
+                      <span class="language-option-inner">
+                        <span class="language-flag" :class="option.flagClass" aria-hidden="true"></span>
+                        <span>{{ option.label }}</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
                 <button @click="logout" class="logout-btn">
-                  Sign Out
+                  {{ $t('nav.signOut') }}
                 </button>
               </div>
             </div>
@@ -131,14 +161,31 @@ export default {
       showPassword: false,
       isLoading: false,
       showProfileMenu: false,
+      isSignupMode: false,
+      isPasswordResetMode: false,
       customerInfo: {
         name: '',
         email: '',
         id: null
-      }
+      },
+      languageOptions: [
+        { value: 'en', label: 'English', flagClass: 'flag-en' },
+        { value: 'fr', label: 'Français', flagClass: 'flag-fr' },
+        { value: 'nl', label: 'Nederlands', flagClass: 'flag-nl' }
+      ],
+      selectedLanguage: 'fr',
+      isLanguageOpen: false
     }
   },
   mounted() {
+    this.installLocaleFetchInterceptor();
+
+    const storedLocale = localStorage.getItem('decilo_locale');
+    if (storedLocale) {
+      this.selectedLanguage = this.normalizeLanguage(storedLocale);
+    }
+    this.setLocale(this.selectedLanguage);
+
     // Check for stored token on component creation
     const storedToken = localStorage.getItem('decilo_token');
     const storedUser = localStorage.getItem('decilo_user');
@@ -149,13 +196,32 @@ export default {
       } else {
         this.customerInfo = JSON.parse(storedUser);
         this.isLoggedIn = true;
+        this.selectedLanguage = this.normalizeLanguage(this.customerInfo.lang);
+        localStorage.setItem('decilo_locale', this.selectedLanguage);
+        this.setLocale(this.selectedLanguage);
       }
     }
   },
   methods: {
+    setLocale(value) {
+      if (!this.$i18n) return;
+      if (this.$i18n.global && this.$i18n.global.locale !== undefined) {
+        if (typeof this.$i18n.global.locale === 'object' && 'value' in this.$i18n.global.locale) {
+          this.$i18n.global.locale.value = value;
+        } else {
+          this.$i18n.global.locale = value;
+        }
+      } else if (this.$i18n.locale !== undefined) {
+        if (typeof this.$i18n.locale === 'object' && 'value' in this.$i18n.locale) {
+          this.$i18n.locale.value = value;
+        } else {
+          this.$i18n.locale = value;
+        }
+      }
+    },
     async login() {
       if (!this.email || !this.password) {
-        this.error = 'Please enter your email and password';
+        this.error = this.$t('login.missingFields');
         return;
       }
 
@@ -177,7 +243,7 @@ export default {
         const data = await response.json();
         
         if (!response.ok) {
-          this.error = data.error || 'Login failed. Please try again.';
+          this.error = data.error || this.$t('login.failed');
           return;
         }
         
@@ -187,15 +253,20 @@ export default {
         
         this.customerInfo = data.user;
         this.isLoggedIn = true;
+        this.selectedLanguage = this.normalizeLanguage(data.user?.lang);
+        localStorage.setItem('decilo_locale', this.selectedLanguage);
         
       } catch (err) {
-        this.error = 'Login failed. Please try again.';
+        this.error = this.$t('login.failed');
       } finally {
         this.isLoading = false;
       }
     },
     toggleProfileMenu() {
       this.showProfileMenu = !this.showProfileMenu;
+      if (!this.showProfileMenu) {
+        this.isLanguageOpen = false;
+      }
     },
     logout() {
       localStorage.removeItem('decilo_token');
@@ -210,6 +281,57 @@ export default {
       this.password = '';
       this.error = '';
       this.showProfileMenu = false;
+      this.isLanguageOpen = false;
+      this.selectedLanguage = 'fr';
+      localStorage.removeItem('decilo_locale');
+    },
+    toggleLanguageDropdown() {
+      this.isLanguageOpen = !this.isLanguageOpen;
+    },
+    normalizeLanguage(lang) {
+      const map = {
+        en: 'en',
+        'en_us': 'en',
+        'en-gb': 'en',
+        'en_gb': 'en',
+        fr: 'fr',
+        'fr_fr': 'fr',
+        'fr-be': 'fr',
+        'fr_be': 'fr',
+        nl: 'nl',
+        'nl_nl': 'nl',
+        'nl-be': 'nl',
+        'nl_be': 'nl'
+      };
+      if (!lang) return 'fr';
+      return map[String(lang).toLowerCase()] || 'fr';
+    },
+    installLocaleFetchInterceptor() {
+      if (window.__deciloFetchPatched) return;
+      window.__deciloFetchPatched = true;
+
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        const headers = new Headers(init.headers || {});
+        const locale = localStorage.getItem('decilo_locale');
+        if (locale) {
+          headers.set('X-Locale', locale);
+        }
+        return originalFetch(input, { ...init, headers });
+      };
+    },
+    selectLanguage(value) {
+      this.selectedLanguage = value;
+      this.setLocale(value);
+      this.isLanguageOpen = false;
+      this.customerInfo = { ...this.customerInfo, lang: value };
+      localStorage.setItem('decilo_locale', value);
+      const storedUser = localStorage.getItem('decilo_user');
+      if (storedUser) {
+        const parsed = JSON.parse(storedUser);
+        parsed.lang = value;
+        localStorage.setItem('decilo_user', JSON.stringify(parsed));
+      }
     },
     isTokenExpired(token) {
       try {
@@ -231,7 +353,7 @@ export default {
       this.logout();
 
       // Show a message to the user
-      this.error = 'Your session has expired. Please log in again.';
+      this.error = this.$t('login.sessionExpired');
 
       // Switch to login view
       this.isLoggedIn = false;
@@ -499,6 +621,112 @@ export default {
 .profile-info span {
   color: #888888;
   font-size: 0.9em;
+}
+
+.profile-language {
+  padding: 12px 15px;
+  border-bottom: 1px solid #333333;
+}
+
+.language-label {
+  font-size: 12px;
+  color: #888888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.language-select {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #191919;
+  color: #ffffff;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.language-select:hover {
+  border-color: #3a3a3a;
+  background: #1f1f1f;
+}
+
+.language-select-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.language-flag {
+  width: 18px;
+  height: 12px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background: #444444;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.flag-en {
+  background-image: url('/static/images/uk_flag.png');
+}
+
+.flag-fr {
+  background: linear-gradient(90deg, #1b3b8f 0%, #1b3b8f 33.33%, #ffffff 33.33%, #ffffff 66.66%, #c8102e 66.66%, #c8102e 100%);
+}
+
+.flag-nl {
+  background: linear-gradient(180deg, #ae1c28 0%, #ae1c28 33.33%, #ffffff 33.33%, #ffffff 66.66%, #21468b 66.66%, #21468b 100%);
+}
+
+.language-chevron {
+  width: 16px;
+  height: 16px;
+  transform: rotate(0deg);
+  transition: transform 0.2s;
+}
+
+.language-chevron.open {
+  transform: rotate(180deg);
+}
+
+.language-options {
+  margin-top: 8px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.language-option {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #ffffff;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.language-option:hover {
+  background: #1f1f1f;
+}
+
+.language-option.active {
+  background: #222222;
+  color: #e0e0e0;
+}
+
+.language-option-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .logout-btn {
