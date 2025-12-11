@@ -171,7 +171,7 @@ export default {
       selectedProduct: null,
       isLoading: false,
       currentPage: 1,
-      itemsPerPage: 20,
+      itemsPerPage: 100,
       totalProducts: 0,
       searchTimeout: null,
       selectedVariants: {},
