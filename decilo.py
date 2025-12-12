@@ -44,7 +44,8 @@ VARIANT_IMAGE_CACHE = {}
 UI_TO_ODOO_LANG = {
     'en': 'en_US',
     'fr': 'fr_BE',  # use installed FR locale
-    'nl': 'nl_NL',
+    # Prefer nl_BE because nl_NL is not installed on the instance
+    'nl': 'nl_BE',
 }
 
 ODOO_TO_UI_LANG = {
@@ -406,9 +407,11 @@ class OdooXMLRPCClient(OdooClient):
         return self._uid
     
     def _get_models(self):
-        if not self._models:
-            self._models = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object', allow_none=True)
-        return OdooModelsProxy(self._models, get_request_locale)
+        # Always create a fresh proxy to avoid stale HTTP connections causing transport errors
+        return OdooModelsProxy(
+            xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object', allow_none=True),
+            get_request_locale
+        )
     
     def search_products(self, domain=None, fields=None, offset=0, limit=None, order=None, include_variants=False):
         uid = self.authenticate()
@@ -725,7 +728,9 @@ def resolve_variant_product(models, uid, product_template_id, selected_variants)
 def get_template_variant_cache(models, uid, product_template_id):
     """Build or return cached per-template data for fast variant resolution."""
     now = time.time()
-    cached = VARIANT_TEMPLATE_CACHE.get(product_template_id)
+    locale = get_request_locale()
+    cache_key = (product_template_id, locale)
+    cached = VARIANT_TEMPLATE_CACHE.get(cache_key)
     if cached and cached.get('expires_at', 0) > now:
         return cached
 
@@ -803,7 +808,7 @@ def get_template_variant_cache(models, uid, product_template_id):
         'candidates': candidates,
         'expires_at': now + VARIANT_TEMPLATE_CACHE_TTL
     }
-    VARIANT_TEMPLATE_CACHE[product_template_id] = cached
+    VARIANT_TEMPLATE_CACHE[cache_key] = cached
     return cached
 
 def resolve_variant_from_cache(models, uid, product_template_id, selected_variants):

@@ -289,6 +289,10 @@ export default {
     customerInfo: {
       type: Object,
       required: true
+    },
+    locale: {
+      type: String,
+      default: 'fr'
     }
   },
   data() {
@@ -359,6 +363,11 @@ export default {
     this.fetchOrders()
   },
   watch: {
+    locale(newVal, oldVal) {
+      if (newVal !== oldVal) {
+        this.onLocaleChanged()
+      }
+    },
     selectedStatus() {
       this.autoSelectFirstOrder()
     },
@@ -391,6 +400,18 @@ export default {
     }
   },
   methods: {
+    async onLocaleChanged() {
+      // Refresh orders and clear any locale-specific details
+      this.orders = []
+      this.selectedOrder = null
+      this.selectedOrderPartner = null
+      this.selectedOrderPatient = null
+      this.docs = { left: { exists: false, filename: '' }, right: { exists: false, filename: '' } }
+      this.docsError = ''
+      this.summaryFilter = 'all'
+      this.lastDetailsOrderId = null
+      await this.fetchOrders()
+    },
     async loadSelectedOrderPartner(orderId) {
       try {
         const token = localStorage.getItem('decilo_token')

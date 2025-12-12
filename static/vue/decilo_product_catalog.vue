@@ -183,6 +183,12 @@ export default {
   directives: {
     "click-outside": clickOutside,
   },
+  props: {
+    locale: {
+      type: String,
+      default: "fr",
+    },
+  },
   data() {
     return {
       products: [],
@@ -237,7 +243,33 @@ export default {
   created() {
     this.fetchProducts();
   },
+  watch: {
+    locale(newVal, oldVal) {
+      if (newVal !== oldVal) {
+        this.onLocaleChanged();
+      }
+    },
+  },
   methods: {
+    async onLocaleChanged() {
+      // Clear cached responses and refetch everything in the new locale
+      productCache.clear();
+      const previouslySelectedId = this.selectedProduct?.id;
+      this.products = [];
+      this.categories = [];
+      this.selectedProduct = null;
+      this.selectedVariants = {};
+      this.currentPage = 1;
+      await this.fetchProducts();
+      if (previouslySelectedId) {
+        const refreshed = this.products.find(
+          (p) => p.id === previouslySelectedId
+        );
+        if (refreshed) {
+          await this.showProductDetails(refreshed);
+        }
+      }
+    },
     base64ToObjectUrl(b64, mime = "image/png") {
       try {
         const byteChars = atob(b64);
@@ -256,6 +288,7 @@ export default {
     getCacheKey() {
       // Build a stable cache key from current query params
       return JSON.stringify({
+        locale: this.locale || "fr",
         searchQuery: this.searchQuery || "",
         currentPage: this.currentPage || 1,
         itemsPerPage: this.itemsPerPage || 20,

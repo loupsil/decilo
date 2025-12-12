@@ -130,11 +130,18 @@
       <main class="dashboard-content">
         <decilo-product-catalog
           v-if="activeTab === 'products'"
+          ref="productCatalog"
+          :locale="selectedLanguage"
           @go-to-orders="activeTab = 'orders'"
           @token-expired="handleTokenExpired"
         />
         <div v-else-if="activeTab === 'orders'">
-          <decilo-orders :customer-info="customerInfo" @token-expired="handleTokenExpired" />
+          <decilo-orders
+            ref="ordersSection"
+            :customer-info="customerInfo"
+            :locale="selectedLanguage"
+            @token-expired="handleTokenExpired"
+          />
         </div>
       </main>
     </div>
