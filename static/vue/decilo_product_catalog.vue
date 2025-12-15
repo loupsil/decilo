@@ -204,6 +204,8 @@ export default {
       selectedVariants: {},
       selectedCategories: [],
       isDetailLoading: false,
+      detailRequestId: 0,
+      detailAbortController: null,
     };
   },
   computed: {
@@ -485,8 +487,8 @@ export default {
       }
     },
 
-    async fetchImagesForProducts(productIds, size = "medium") {
-      if (!productIds || productIds.length === 0) return;
+    async fetchImagesForProducts(productIds, size = "medium", signal) {
+      if (!productIds || productIds.length === 0 || signal?.aborted) return;
 
       const token = localStorage.getItem("decilo_token");
       if (!token) return;
@@ -496,14 +498,12 @@ export default {
         params.append("ids", productIds.join(","));
         params.append("size", size);
 
-        const response = await fetch(
-          `/decilo-api/product-images?${params.toString()}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch(`/decilo-api/product-images?${params.toString()}`, {
+          signal,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (!response.ok) {
           console.warn("⚠️ Unable to fetch product images", response.status);
@@ -523,6 +523,9 @@ export default {
           image_url: byId[p.id] || p.image_url,
         }));
       } catch (err) {
+        if (err?.name === "AbortError") {
+          return;
+        }
         console.warn("⚠️ Failed to hydrate product images", err);
       }
     },
@@ -598,6 +601,13 @@ export default {
     },
 
     async showProductDetails(product) {
+      // Cancel any in-flight detail/image fetches before starting a new one
+      if (this.detailAbortController) {
+        this.detailAbortController.abort();
+      }
+      this.detailAbortController = new AbortController();
+      const { signal } = this.detailAbortController;
+      const requestId = ++this.detailRequestId;
       // Always start with the list product while we hydrate details
       this.selectedProduct = product;
       this.selectedVariants = {};
@@ -611,15 +621,13 @@ export default {
           return;
         }
 
-        const response = await fetch(
-          `/decilo-api/products/${product.id}?include_image=false`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        const response = await fetch(`/decilo-api/products/${product.id}?include_image=false`, {
+          signal,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
 
         if (!response.ok) {
           console.warn("⚠️ Failed to fetch product detail", response.status);
@@ -627,6 +635,7 @@ export default {
         }
 
         const detail = await response.json();
+        if (requestId !== this.detailRequestId) return;
         // Merge detail into current selection but keep existing image until we fetch full image separately
         this.selectedProduct = {
           ...product,
@@ -648,15 +657,25 @@ export default {
           });
         }
       } catch (err) {
+        if (err?.name === "AbortError") {
+          return;
+        }
         console.warn("⚠️ Error fetching product detail", err);
       }
       finally {
-        this.isDetailLoading = false;
+        if (requestId === this.detailRequestId) {
+          this.isDetailLoading = false;
+        }
+      }
+
+      if (requestId !== this.detailRequestId || !this.selectedProduct) {
+        return;
       }
 
       // Fetch medium first (if needed) then upgrade to full resolution
       try {
-        await this.fetchImagesForProducts([product.id], "medium");
+        await this.fetchImagesForProducts([product.id], "medium", signal);
+        if (requestId !== this.detailRequestId || !this.selectedProduct) return;
         const updated = this.products.find((p) => p.id === product.id);
         if (updated?.image_url) {
           this.selectedProduct = {
@@ -665,7 +684,8 @@ export default {
           };
         }
 
-        await this.fetchImagesForProducts([product.id], "full");
+        await this.fetchImagesForProducts([product.id], "full", signal);
+        if (requestId !== this.detailRequestId || !this.selectedProduct) return;
         const updatedFull = this.products.find((p) => p.id === product.id);
         if (updatedFull?.image_url) {
           this.selectedProduct = {
@@ -674,7 +694,14 @@ export default {
           };
         }
       } catch (err) {
+        if (err?.name === "AbortError") {
+          return;
+        }
         console.warn("⚠️ Error fetching full image", err);
+      }
+
+      if (requestId !== this.detailRequestId || !this.selectedProduct) {
+        return;
       }
 
       // Pre-select first value of each variant if available, except Ear Impression Type
@@ -709,8 +736,14 @@ export default {
     },
 
     closeModal() {
+      if (this.detailAbortController) {
+        this.detailAbortController.abort();
+        this.detailAbortController = null;
+      }
+      this.detailRequestId += 1;
       this.selectedProduct = null;
       this.selectedVariants = {};
+      this.isDetailLoading = false;
     },
 
     isTokenExpired(token) {
