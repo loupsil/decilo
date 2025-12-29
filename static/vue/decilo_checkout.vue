@@ -666,16 +666,23 @@ export default {
   },
   watch: {
     selectedProduct: {
-      handler(newProduct) {
+      handler(newProduct, oldProduct) {
+        // Only reset the form when the checkout is first opened (null -> product)
+        // Don't reset when the same product's properties are updated (e.g., image_url changes)
+        const isFirstOpen = !oldProduct && newProduct;
+
         if (newProduct) {
           this.imageRequestId += 1;
           this.activeImageUrl = newProduct.image_url || '/static/images/product-placeholder.jpg';
           this.activeImageRequestId = this.imageRequestId;
           this.isImageLoading = false;
           this.lastImageVariantKey = '';
-          this.resetOrderForm();
-          this.fetchPatientContacts();
-          this.fetchVariantExclusions();
+
+          if (isFirstOpen) {
+            this.resetOrderForm();
+            this.fetchPatientContacts();
+            this.fetchVariantExclusions();
+          }
           this.refreshVariantImage();
         } else {
           this.activeImageUrl = '/static/images/product-placeholder.jpg';

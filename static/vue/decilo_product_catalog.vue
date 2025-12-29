@@ -703,20 +703,6 @@ export default {
       if (requestId !== this.detailRequestId || !this.selectedProduct) {
         return;
       }
-
-      // Pre-select first value of each variant if available, except Ear Impression Type
-      if (this.selectedProduct?.variants) {
-        this.selectedProduct.variants.forEach((variant) => {
-          if (
-            variant.values &&
-            variant.values.length > 0 &&
-            variant.attribute !== "Ear Impression Type" &&
-            !variant.attribute.toLowerCase().includes("ear impression")
-          ) {
-            this.selectedVariants[variant.attribute] = variant.values[0];
-          }
-        });
-      }
     },
 
     isSelectedVariant(attribute, value) {
