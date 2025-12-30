@@ -7,3 +7,5 @@ __pycache__/
 test.py
 .env*.example
 .env copy.example
+
+*.har

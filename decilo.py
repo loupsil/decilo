@@ -934,6 +934,118 @@ def get_products(current_user):
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
 
+@decilo_bp.route('/decilo-api/products/default-variants', methods=['GET'])
+@token_required
+def get_default_variant_ids(current_user):
+    """
+    Get default variant product IDs for all published products.
+    Used for background prefetching to enable instant image loading on click.
+
+    Returns:
+        { "variants": { product_template_id: variant_product_id, ... } }
+    """
+    try:
+        uid = get_uid()
+        models = get_odoo_models()
+
+        # Get all published product IDs
+        domain = [
+            ('sale_ok', '=', True),
+            ('x_studio_is_published_b2audio', '=', True)
+        ]
+
+        product_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template', 'search',
+            [domain]
+        )
+
+        if not product_ids:
+            return jsonify({'variants': {}})
+
+        # Get products with attribute_line_ids in one call
+        products = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template', 'read',
+            [product_ids],
+            {'fields': ['id', 'attribute_line_ids']}
+        )
+
+        # Collect all attribute line IDs for batch fetch
+        all_attr_line_ids = []
+        for p in products:
+            all_attr_line_ids.extend(p.get('attribute_line_ids', []))
+
+        # Batch fetch all attribute lines
+        attr_lines_by_id = {}
+        if all_attr_line_ids:
+            attr_lines = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.template.attribute.line', 'read',
+                [list(set(all_attr_line_ids))],
+                {'fields': ['id', 'attribute_id', 'value_ids']}
+            )
+            attr_lines_by_id = {al['id']: al for al in attr_lines}
+
+        # Collect all value IDs for batch fetch
+        all_value_ids = []
+        for al in attr_lines_by_id.values():
+            all_value_ids.extend(al.get('value_ids', []))
+
+        # Batch fetch all attribute values
+        values_by_id = {}
+        if all_value_ids:
+            values = models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.attribute.value', 'read',
+                [list(set(all_value_ids))],
+                {'fields': ['id', 'name']}
+            )
+            values_by_id = {v['id']: v['name'] for v in values}
+
+        # Now resolve default variant for each product
+        result = {}
+        for product in products:
+            product_id = product['id']
+            attr_line_ids = product.get('attribute_line_ids', [])
+
+            if not attr_line_ids:
+                # No variants - use template's default variant
+                variant_id, _, _ = resolve_variant_from_cache(models, uid, product_id, {})
+                if variant_id:
+                    result[product_id] = variant_id
+                continue
+
+            # Compute default selections (first value of each attribute, skip ear impression)
+            default_selections = {}
+            for line_id in attr_line_ids:
+                line = attr_lines_by_id.get(line_id, {})
+                attr_name = line.get('attribute_id', [0, ''])[1]
+                value_ids = line.get('value_ids', [])
+
+                # Skip ear impression attributes
+                if 'ear impression' in attr_name.lower():
+                    continue
+
+                # Get first value
+                if value_ids:
+                    first_value = values_by_id.get(value_ids[0], '')
+                    if first_value:
+                        default_selections[attr_name] = first_value
+
+            # Resolve variant
+            variant_id, _, err = resolve_variant_from_cache(models, uid, product_id, default_selections)
+            if variant_id:
+                result[product_id] = variant_id
+
+        return jsonify({'variants': result})
+
+    except Exception as e:
+        error_msg = f"Error fetching default variants: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
+
 @decilo_bp.route('/decilo-api/product-images', methods=['GET'])
 @token_required
 def get_product_images_endpoint(current_user):
@@ -971,6 +1083,167 @@ def get_product_images_endpoint(current_user):
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
 
+@decilo_bp.route('/decilo-api/products/prefetch', methods=['POST'])
+@token_required
+def prefetch_products(current_user):
+    """
+    Pre-warm caches for a list of products to enable instant loading when clicked.
+    Fetches product details, variants, default variant images, and exclusions.
+
+    Request body:
+    {
+        "product_ids": [1, 2, 3, ...],
+        "image_sizes": ["medium", "full"]  // optional, defaults to ["medium"]
+    }
+
+    Returns summary of what was prefetched.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        product_ids = payload.get('product_ids', [])
+        image_sizes = payload.get('image_sizes', ['medium'])
+
+        if not product_ids:
+            return jsonify({'error': 'product_ids is required'}), 400
+
+        if not isinstance(product_ids, list):
+            return jsonify({'error': 'product_ids must be an array'}), 400
+
+        # Limit to prevent abuse
+        max_products = 20
+        if len(product_ids) > max_products:
+            product_ids = product_ids[:max_products]
+
+        uid = get_uid()
+        models = get_odoo_models()
+        now = time.time()
+
+        prefetched = []
+        errors = []
+
+        for product_id in product_ids:
+            try:
+                product_result = {
+                    'product_id': product_id,
+                    'details': False,
+                    'variants': False,
+                    'exclusions': False,
+                    'images': []
+                }
+
+                # 1. Fetch and cache product details + variants
+                product = odoo_client.read_product(product_id, include_image=False)
+                if product:
+                    product_result['details'] = True
+                    variants = odoo_client.get_product_variants(product_id)
+                    if variants:
+                        product_result['variants'] = True
+
+                        # 2. Compute default variant selections (first value of each attribute, except Ear Impression Type)
+                        default_selections = {}
+                        for variant in variants:
+                            attr_name = variant.get('attribute', '')
+                            values = variant.get('values', [])
+                            # Skip Ear Impression Type - it's user-selected
+                            if 'ear impression' in attr_name.lower():
+                                continue
+                            if values:
+                                default_selections[attr_name] = values[0]
+
+                        # 3. Pre-warm template variant cache (used by resolve_variant_from_cache)
+                        get_template_variant_cache(models, uid, product_id)
+
+                        # 4. Prefetch variant images for default selections
+                        if default_selections:
+                            for size in image_sizes:
+                                try:
+                                    cache_key = (product_id, size, json.dumps(sorted(default_selections.items())))
+
+                                    # Check if already cached
+                                    cached = VARIANT_IMAGE_CACHE.get(cache_key)
+                                    if cached and cached.get('expires_at', 0) > now:
+                                        product_result['images'].append({'size': size, 'cached': True})
+                                        continue
+
+                                    # Resolve variant and fetch image
+                                    variant_product_id, ptav_ids, err = resolve_variant_from_cache(
+                                        models, uid, product_id, default_selections
+                                    )
+
+                                    if not err and variant_product_id:
+                                        size_field = odoo_client._image_field_for_size(size)
+                                        variant_image = models.execute_kw(
+                                            ODOO_DB, uid, ODOO_API_KEY,
+                                            'product.product', 'read',
+                                            [[variant_product_id]],
+                                            {'fields': [size_field]}
+                                        )
+
+                                        image_b64 = None
+                                        if variant_image and variant_image[0].get(size_field):
+                                            image_b64 = variant_image[0].get(size_field)
+
+                                        # Fallback to template image
+                                        if not image_b64:
+                                            template_images = odoo_client.get_product_images([product_id], size=size)
+                                            if template_images and template_images[0].get('image'):
+                                                image_b64 = template_images[0].get('image')
+
+                                        if image_b64:
+                                            # Cache the full payload
+                                            image_url = f"data:image/png;base64,{image_b64}"
+                                            cached_payload = {
+                                                'product_id': product_id,
+                                                'variant_product_id': variant_product_id,
+                                                'image': image_url,
+                                                'ptav_ids': ptav_ids,
+                                                'source': 'variant' if variant_image and variant_image[0].get(size_field) else 'product',
+                                                'size': size
+                                            }
+                                            VARIANT_IMAGE_CACHE[cache_key] = {
+                                                'payload': cached_payload,
+                                                'expires_at': now + VARIANT_IMAGE_CACHE_TTL,
+                                                'image': image_b64
+                                            }
+                                            product_result['images'].append({'size': size, 'cached': False, 'fetched': True})
+                                        else:
+                                            product_result['images'].append({'size': size, 'fetched': False, 'reason': 'no_image'})
+                                    else:
+                                        product_result['images'].append({'size': size, 'fetched': False, 'reason': err or 'no_variant'})
+                                except Exception as img_err:
+                                    product_result['images'].append({'size': size, 'error': str(img_err)})
+
+                # 5. Pre-warm exclusions cache by calling the exclusion logic
+                try:
+                    ptav_ids = models.execute_kw(
+                        ODOO_DB, uid, ODOO_API_KEY,
+                        'product.template.attribute.value', 'search',
+                        [[('product_tmpl_id', '=', product_id)]],
+                        {'order': 'id asc'}
+                    )
+                    if ptav_ids:
+                        product_result['exclusions'] = True
+                except Exception:
+                    pass
+
+                prefetched.append(product_result)
+
+            except Exception as prod_err:
+                errors.append({'product_id': product_id, 'error': str(prod_err)})
+
+        return jsonify({
+            'prefetched': prefetched,
+            'errors': errors,
+            'total': len(prefetched),
+            'requested': len(product_ids)
+        })
+
+    except Exception as e:
+        error_msg = f"Error in prefetch: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
+
 @decilo_bp.route('/decilo-api/products/<int:product_id>/image', methods=['GET'])
 @token_required
 def get_product_image(current_user, product_id):
@@ -994,30 +1267,75 @@ def get_product_image(current_user, product_id):
         logger.error(error_msg, exc_info=True)
         return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
 
+
+@decilo_bp.route('/decilo-api/variant-image/<int:variant_product_id>', methods=['GET'])
+@token_required
+def get_variant_image_by_id(current_user, variant_product_id):
+    """
+    Fetch image for a specific variant product by its ID.
+    This is the fast path - no variant resolution needed, just one RPC.
+
+    Query params:
+        size: thumb | small | medium | large | full (default: medium)
+
+    Returns: Binary image data with appropriate MIME type
+    """
+    try:
+        size = request.args.get('size', 'medium')
+        uid = get_uid()
+        models = get_odoo_models()
+
+        # Map size to Odoo field
+        size_field = odoo_client._image_field_for_size(size)
+
+        # Single RPC to get the image
+        variant_data = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.product', 'read',
+            [[variant_product_id]],
+            {'fields': [size_field]}
+        )
+
+        if not variant_data or not variant_data[0].get(size_field):
+            return jsonify({'error': 'Image not found', 'code': 'not_found'}), 404
+
+        image_b64 = variant_data[0][size_field]
+        binary = base64.b64decode(image_b64)
+        image_type = imghdr.what(None, h=binary) or 'png'
+        mimetype = f'image/{image_type}'
+
+        return Response(binary, mimetype=mimetype)
+
+    except Exception as e:
+        error_msg = f"Error fetching variant image {variant_product_id}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({'error': error_msg, 'code': 'unknown_error'}), 500
+
+
 @decilo_bp.route('/decilo-api/products/<int:product_id>', methods=['GET'])
 @token_required
 def get_product(current_user, product_id):
-    """Get detailed information about a specific product"""
-    try:
-        include_image_param = request.args.get('include_image', 'true').lower()
-        include_image = include_image_param not in ['false', '0', 'no']
+    """Get detailed information about a specific product.
 
+    Simplified endpoint - returns product with variants in ~1 RPC.
+    Use /variant-image/<id> for images and /products/<id>/variant-exclusions for exclusions.
+
+    Query params:
+        include_image: bool - include product template image (default: false)
+    """
+    try:
+        include_image_param = request.args.get('include_image', 'false').lower()
+        include_image = include_image_param in ['true', '1', 'yes']
+
+        # read_product already fetches variants internally - no need for separate call
         product = odoo_client.read_product(product_id, include_image=include_image)
-        
+
         if not product:
             return jsonify({'error': 'Product not found', 'code': 'not_found'}), 404
-            
-        # Get variant information
-        variants = odoo_client.get_product_variants(product_id)
-        
-        # Add variants to the response
-        response = {
-            **product,
-            'variants': variants
-        }
-            
-        return jsonify(response)
-        
+
+        # Product already includes 'variants' from read_product
+        return jsonify(product)
+
     except Exception as e:
         error_msg = f"Error fetching product {product_id}: {str(e)}"
         logger.error(error_msg, exc_info=True)

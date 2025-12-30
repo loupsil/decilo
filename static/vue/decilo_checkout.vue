@@ -38,7 +38,8 @@
         <div class="modal-product-image">
           <div class="image-frame" :class="{ 'is-loading': isImageLoading }">
             <img
-              :src="activeImageUrl || selectedProduct.image_url"
+              v-show="activeImageUrl"
+              :src="activeImageUrl"
               :alt="selectedProduct.name"
               @load="onImageLoaded"
               @error="onImageError"
@@ -512,6 +513,13 @@ const clickOutside = {
   }
 };
 
+// Client-side cache for variant images (persists for the session)
+const variantImageCache = new Map();
+
+function getVariantCacheKey(productId, variantKey, size) {
+  return `${productId}::${variantKey}::${size}`;
+}
+
 import UploadEarImpressions from './upload_ear_impressions.vue';
 
 export default {
@@ -564,8 +572,9 @@ export default {
       variantExclusions: [],
       variantExclusionsLoading: false,
       variantExclusionsError: '',
-      activeImageUrl: '/static/images/product-placeholder.jpg',
-      isImageLoading: false,
+      pendingExclusionsProductId: null,
+      activeImageUrl: '',
+      isImageLoading: true,
       activeImageRequestId: 0,
       imageRequestId: 0,
       lastImageVariantKey: '',
@@ -673,22 +682,52 @@ export default {
 
         if (newProduct) {
           this.imageRequestId += 1;
-          this.activeImageUrl = newProduct.image_url || '/static/images/product-placeholder.jpg';
-          this.activeImageRequestId = this.imageRequestId;
-          this.isImageLoading = false;
           this.lastImageVariantKey = '';
 
           if (isFirstOpen) {
+            this.activeImageUrl = '';
+            this.isImageLoading = true;
             this.resetOrderForm();
-            this.fetchPatientContacts();
-            this.fetchVariantExclusions();
+            this.variantExclusions = Array.isArray(newProduct?.exclusions) ? newProduct.exclusions : [];
+            this.variantExclusionsLoading = false;
+            this.variantExclusionsError = '';
+            this.pendingExclusionsProductId = Array.isArray(newProduct?.exclusions) ? null : newProduct.id;
+
+            // Fast path: if we have prefetched variant ID, fetch image directly (1 RPC)
+            const variantId = newProduct.default_variant_product_id;
+            if (variantId) {
+              this.fetchImageByVariantId(variantId, 'medium').then((imageUrl) => {
+                if (imageUrl && this.selectedProduct?.id === newProduct.id) {
+                  this.activeImageUrl = imageUrl;
+                  this.isImageLoading = false;
+                  // Fetch full resolution in background
+                  this.fetchImageByVariantId(variantId, 'full').then((fullUrl) => {
+                    if (fullUrl && this.selectedProduct?.id === newProduct.id) {
+                      this.activeImageUrl = fullUrl;
+                    }
+                  });
+                }
+              });
+            } else {
+              // Fallback: no prefetched ID, use traditional variant resolution
+              // Wait a tick for selectedVariants to be set by parent, then fetch
+              this.$nextTick(() => {
+                this.refreshVariantImage();
+              });
+            }
+          } else {
+            // For non-first-open updates (e.g., product properties changed), refresh image
+            this.refreshVariantImage();
           }
-          this.refreshVariantImage();
-        } else {
-          this.activeImageUrl = '/static/images/product-placeholder.jpg';
+
           this.activeImageRequestId = this.imageRequestId;
-          this.isImageLoading = false;
+        } else {
+          // Modal closed - reset to spinner state for next open
+          this.activeImageUrl = '';
+          this.activeImageRequestId = this.imageRequestId;
+          this.isImageLoading = true;
           this.lastImageVariantKey = '';
+          this.pendingExclusionsProductId = null;
         }
       },
       immediate: true
@@ -704,12 +743,15 @@ export default {
 
 
     orderStep(newVal) {
+      // Load patient contacts when entering step 1 (patient info step)
+      if (newVal === 1 && this.patientContacts.length === 0) {
+        this.fetchPatientContacts();
+      }
       // Load documents when entering Documents step with existing patient or with previous order
       // But NOT when sending impressions (Paste - Sending ear impressions variant)
       if (newVal === 2 && this.selectedPatient && (this.clientType === 'existing' || this.isWithPreviousOrder) && !this.isSendingImpressions) {
         this.fetchAndPreloadPatientDocs()
       }
-
     },
     impressionMethod(newVal) {
       // When user selects 'scan' method and has an existing patient, pre-load their documents
@@ -878,6 +920,14 @@ export default {
         this.variantExclusionsLoading = true
         this.variantExclusionsError = ''
         this.variantExclusions = []
+
+        // Check if exclusions were already provided in the product response (combined endpoint)
+        if (Array.isArray(this.selectedProduct?.exclusions)) {
+          this.variantExclusions = this.selectedProduct.exclusions
+          return
+        }
+
+        // Fall back to fetching separately if not provided
         const token = localStorage.getItem('decilo_token')
         if (!token || !this.selectedProduct?.id) return
         const res = await fetch(`/decilo-api/products/${encodeURIComponent(this.selectedProduct.id)}/variant-exclusions`, {
@@ -894,6 +944,13 @@ export default {
       } finally {
         this.variantExclusionsLoading = false
       }
+    },
+
+    maybeFetchVariantExclusions() {
+      if (!this.pendingExclusionsProductId) return
+      if (!this.selectedProduct || this.selectedProduct.id !== this.pendingExclusionsProductId) return
+      this.pendingExclusionsProductId = null
+      this.fetchVariantExclusions()
     },
 
     async submitOrder() {
@@ -1013,29 +1070,134 @@ export default {
       this.resetOrderForm();
     },
 
+    async fetchVariantImageWithSize(productId, selections, size, token) {
+      const res = await fetch(`/decilo-api/products/${encodeURIComponent(productId)}/variant-image`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ selected_variants: selections, size })
+      })
+      if (!res.ok) {
+        throw new Error(`Variant image request failed with status ${res.status}`)
+      }
+      const data = await res.json()
+      return data?.image || null
+    },
+
+    async fetchImageByVariantId(variantProductId, size = 'medium') {
+      // Fast path: fetch image directly by variant product ID (1 RPC, no resolution needed)
+      const token = localStorage.getItem('decilo_token')
+      if (!token || !variantProductId) return null
+
+      try {
+        const res = await fetch(`/decilo-api/variant-image/${variantProductId}?size=${size}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (!res.ok) return null
+
+        // Response is binary image data, convert to data URL
+        const blob = await res.blob()
+        return new Promise((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result)
+          reader.readAsDataURL(blob)
+        })
+      } catch (err) {
+        console.warn('Failed to fetch image by variant ID', err)
+        return null
+      }
+    },
+
+    async fetchFullResolutionInBackground(productId, selections, fullKey) {
+      // Silently fetch full resolution image in background (no spinner, non-blocking)
+      const token = localStorage.getItem('decilo_token')
+      if (!token) return
+
+      const variantKey = JSON.stringify(Object.entries(selections).sort())
+      const fullCacheKey = getVariantCacheKey(productId, variantKey, 'full')
+
+      // Skip if already cached
+      if (variantImageCache.has(fullCacheKey)) return
+
+      try {
+        const fullImage = await this.fetchVariantImageWithSize(productId, selections, 'full', token)
+        if (fullImage && this.lastImageVariantKey === fullKey) {
+          variantImageCache.set(fullCacheKey, fullImage)
+          this.activeImageUrl = fullImage
+        }
+      } catch (err) {
+        // Silent failure - we already have medium resolution
+        console.warn('Background full resolution fetch failed', err)
+      }
+    },
+
     async refreshVariantImage() {
       if (!this.selectedProduct) return
-      const fallback = this.selectedProduct.image_url || '/static/images/product-placeholder.jpg'
       const selections = this.selectedVariants || {}
       const hasSelections = Object.keys(selections).length > 0
-      if (!this.selectedProduct?.id) {
+      const productId = this.selectedProduct?.id
+      const fallback = this.selectedProduct?.image_url || ''
+      const hasSelectableVariants = (this.selectedProduct?.variants || []).some((variant) => {
+        const attribute = (variant?.attribute || '').toLowerCase()
+        return attribute && !attribute.includes('ear impression')
+      })
+      const allowEmptySelections = !hasSelections && !hasSelectableVariants
+      const variantKey = JSON.stringify(Object.entries(selections).sort())
+      const fullKey = productId ? `${productId}::${variantKey}` : ''
+
+      if (!productId) {
         this.activeImageUrl = fallback
         this.isImageLoading = false
         this.activeImageRequestId = this.imageRequestId
         return
       }
 
-      if (!hasSelections) {
-        this.activeImageUrl = fallback
-        this.isImageLoading = false
-        this.activeImageRequestId = this.imageRequestId
+      if (!hasSelections && !allowEmptySelections) {
+        // Keep spinner - waiting for product or variant selections
+        return
+      }
+
+      if (!hasSelections && allowEmptySelections) {
+        if (fallback && !this.activeImageUrl) {
+          this.activeImageUrl = fallback
+          this.activeImageRequestId = this.imageRequestId
+          this.lastImageVariantKey = fullKey
+          this.isImageLoading = false
+        }
+        if (this.selectedProduct?.default_variant_product_id) {
+          return
+        }
+        if (fallback) {
+          return
+        }
+        this.maybeFetchVariantExclusions()
         return
       }
 
       // Avoid duplicate requests for the same selection set
-      const key = `${this.selectedProduct.id}::${JSON.stringify(Object.entries(selections).sort())}`
-      if (key === this.lastImageVariantKey) {
+      if (fullKey === this.lastImageVariantKey) {
         return
+      }
+
+      // Check if selections match the default variant image provided by combined endpoint
+      const defaultSelections = this.selectedProduct?.default_selections
+      const defaultImage = this.selectedProduct?.default_variant_image
+      if (defaultImage && defaultSelections) {
+        const defaultKey = JSON.stringify(Object.entries(defaultSelections).sort())
+        if (variantKey === defaultKey) {
+          // Use the pre-fetched default image, no need to fetch again
+          this.activeImageUrl = defaultImage
+          this.activeImageRequestId = ++this.imageRequestId
+          this.lastImageVariantKey = fullKey
+          this.isImageLoading = false
+          // Cache it for consistency
+          variantImageCache.set(getVariantCacheKey(productId, variantKey, 'medium'), defaultImage)
+          // Still fetch full resolution in background
+          this.fetchFullResolutionInBackground(productId, selections, fullKey)
+          return
+        }
       }
 
       const token = localStorage.getItem('decilo_token')
@@ -1047,31 +1209,63 @@ export default {
       }
 
       const requestId = ++this.imageRequestId
-      this.isImageLoading = true
-      try {
-        const res = await fetch(`/decilo-api/products/${encodeURIComponent(this.selectedProduct.id)}/variant-image`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ selected_variants: selections, size: 'full' })
-        })
-        if (!res.ok) {
-          throw new Error(`Variant image request failed with status ${res.status}`)
-        }
-        const data = await res.json()
-        if (requestId !== this.imageRequestId) return
-        const nextImage = data?.image || fallback
-        this.activeImageUrl = nextImage || fallback
+      const mediumCacheKey = getVariantCacheKey(productId, variantKey, 'medium')
+      const fullCacheKey = getVariantCacheKey(productId, variantKey, 'full')
+
+      // Check if full image is already cached - instant display
+      if (variantImageCache.has(fullCacheKey)) {
+        this.activeImageUrl = variantImageCache.get(fullCacheKey)
         this.activeImageRequestId = requestId
-        this.lastImageVariantKey = key
+        this.lastImageVariantKey = fullKey
+        this.isImageLoading = false
+        return
+      }
+
+      // Check if medium image is cached - show it immediately, no spinner needed
+      if (variantImageCache.has(mediumCacheKey)) {
+        this.activeImageUrl = variantImageCache.get(mediumCacheKey)
+        this.activeImageRequestId = requestId
+        this.isImageLoading = false
+      } else {
+        this.isImageLoading = true
+      }
+
+      try {
+        // Progressive loading: fetch medium first (faster), then full
+        let mediumImage = variantImageCache.get(mediumCacheKey)
+
+        if (!mediumImage) {
+          mediumImage = await this.fetchVariantImageWithSize(productId, selections, 'medium', token)
+          if (requestId !== this.imageRequestId) return
+          if (mediumImage) {
+            variantImageCache.set(mediumCacheKey, mediumImage)
+            this.activeImageUrl = mediumImage
+            this.activeImageRequestId = requestId
+            this.isImageLoading = false // Hide spinner once medium is displayed
+          }
+        }
+
+        // Fetch full resolution silently in background (no spinner)
+        const fullImage = await this.fetchVariantImageWithSize(productId, selections, 'full', token)
+        if (requestId !== this.imageRequestId) return
+
+        if (fullImage) {
+          variantImageCache.set(fullCacheKey, fullImage)
+          this.activeImageUrl = fullImage
+        } else if (mediumImage) {
+          this.activeImageUrl = mediumImage
+        } else {
+          this.activeImageUrl = fallback
+        }
+
+        this.activeImageRequestId = requestId
+        this.lastImageVariantKey = fullKey
       } catch (error) {
         console.warn('Variant image load failed', error)
         if (requestId !== this.imageRequestId) return
         this.activeImageUrl = fallback
         this.activeImageRequestId = requestId
-        this.lastImageVariantKey = key
+        this.lastImageVariantKey = fullKey
       } finally {
         if (requestId === this.imageRequestId) {
           this.isImageLoading = false
@@ -1083,15 +1277,17 @@ export default {
       if (this.activeImageRequestId === this.imageRequestId) {
         this.isImageLoading = false
       }
+      this.maybeFetchVariantExclusions()
     },
 
     onImageError() {
       if (this.activeImageRequestId !== this.imageRequestId) return
-      const fallback = this.selectedProduct?.image_url || '/static/images/product-placeholder.jpg'
-      this.activeImageUrl = fallback
+      // On error, hide image and stop loading (no placeholder)
+      this.activeImageUrl = ''
       this.activeImageRequestId = this.imageRequestId
       this.lastImageVariantKey = ''
       this.isImageLoading = false
+      this.maybeFetchVariantExclusions()
     },
 
     selectVariant(attribute, value) {

@@ -206,6 +206,7 @@ export default {
       isDetailLoading: false,
       detailRequestId: 0,
       detailAbortController: null,
+      defaultVariantIds: {}, // Prefetched default variant IDs for instant image loading
     };
   },
   computed: {
@@ -298,35 +299,22 @@ export default {
       });
     },
     async fetchProducts() {
-      console.log("🔍 Fetching products with params:", {
-        searchQuery: this.searchQuery,
-        currentPage: this.currentPage,
-        itemsPerPage: this.itemsPerPage,
-        selectedCategory: this.selectedCategory,
-      });
-
       const cacheKey = this.getCacheKey();
-      console.log("🔑 Cache key:", cacheKey);
-      console.log("💾 Cache size:", productCache.size);
 
       if (productCache.has(cacheKey)) {
-        console.log("✅ ✅ ✅ USING CACHED PRODUCTS for key:", cacheKey);
         const cached = productCache.get(cacheKey);
         this.products = cached.products;
         this.totalProducts = cached.totalProducts;
         this.categories = cached.categories || [];
         this.selectedCategories = cached.selectedCategories || [];
-        console.log("📊 Cached data loaded:", {
-          productsCount: this.products.length,
-          categoriesCount: this.categories.length,
-          categories: this.categories.map((c) => c.name),
-        });
         // Hydrate images for current page even when using cache
         await this.fetchImagesForProducts(
           this.paginatedProducts.map((p) => p.id),
           this.imageSize
         );
         this.isLoading = false;
+        // Also prefetch variant IDs when using cache
+        this.prefetchDefaultVariantIds();
         return;
       }
 
@@ -335,7 +323,6 @@ export default {
         // Get auth token from localStorage
         const token = localStorage.getItem("decilo_token");
         if (!token) {
-          console.warn("❌ No auth token found - Please log in first");
           throw new Error("Authentication required - Please log in first");
         }
 
@@ -344,8 +331,6 @@ export default {
           this.handleTokenExpired();
           return;
         }
-
-        console.log("🔑 Found auth token");
 
         // Prepare query parameters
         const params = new URLSearchParams();
@@ -358,7 +343,6 @@ export default {
         params.append("limit", this.itemsPerPage);
 
         const url = `/decilo-api/products?${params.toString()}`;
-        console.log("📡 Making API request to:", url);
 
         // Make API request
         const response = await fetch(url, {
@@ -379,18 +363,6 @@ export default {
         }
 
         const data = await response.json();
-        console.log("📦 Received raw API response:", {
-          totalProducts: data.total,
-          numberOfProducts: data.products.length,
-          categoriesCount: data.categories ? data.categories.length : 0,
-          apiCategories: data.categories
-            ? data.categories.map((c) => ({
-                id: c.id,
-                name: c.name,
-                complete_name: c.complete_name,
-              }))
-            : [],
-        });
 
         // Transform the Odoo data to match our component's structure
         this.products = data.products.map((product) => {
@@ -402,7 +374,7 @@ export default {
             ? fullCategoryName.split(" / ").pop()
             : fullCategoryName;
 
-          const transformedProduct = {
+          return {
             id: product.id,
             name: product.name,
             description:
@@ -414,7 +386,7 @@ export default {
                 product.description_ecommerce || product.description_sale
               ) || "No description available",
             price: product.list_price || 0,
-            image_url: "/static/images/product-placeholder.jpg", // hydrate via image endpoint
+            image_url: "", // hydrate via image endpoint
             specifications: this.extractSpecifications(product),
             variants: product.variants || [], // detail endpoint will hydrate when needed
             category: shortCategoryName,
@@ -422,10 +394,6 @@ export default {
             x_studio_is_published_b2audio:
               product.x_studio_is_published_b2audio || false,
           };
-          console.log(
-            `✨ Transformed product ${product.id}: name='${transformedProduct.name}', category='${transformedProduct.category}'`
-          );
-          return transformedProduct;
         });
 
         this.totalProducts = data.total;
@@ -448,12 +416,6 @@ export default {
           };
         });
 
-        console.log("✅ Products loaded successfully:", {
-          displayedProducts: this.products.length,
-          totalProducts: this.totalProducts,
-          categories: this.categories.map((c) => c.name),
-        });
-
         // Fetch images for the current page in order of appearance
         await this.fetchImagesForProducts(
           this.paginatedProducts.map((p) => p.id),
@@ -467,23 +429,40 @@ export default {
           categories: this.categories,
           selectedCategories: this.selectedCategories,
         });
-        console.log(
-          "💾 Stored in cache. Cache now has",
-          productCache.size,
-          "entries"
-        );
       } catch (error) {
-        console.error("❌ Error fetching products:", {
-          error: error.message,
-          stack: error.stack,
-        });
         this.$emit("show-error", {
           message: error.message || "Failed to load products",
           type: "error",
         });
       } finally {
         this.isLoading = false;
-        console.log("🏁 Product fetch completed, loading:", this.isLoading);
+        // Start background prefetch of default variant IDs (non-blocking)
+        this.prefetchDefaultVariantIds();
+      }
+    },
+
+    async prefetchDefaultVariantIds() {
+      // Background prefetch - runs silently after catalog renders
+      const token = localStorage.getItem("decilo_token");
+      if (!token) return;
+
+      try {
+        const response = await fetch("/decilo-api/products/default-variants", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.warn("⚠️ Failed to prefetch default variant IDs", response.status);
+          return;
+        }
+
+        const data = await response.json();
+        this.defaultVariantIds = data.variants || {};
+      } catch (err) {
+        // Silently fail - this is just an optimization
+        console.warn("⚠️ Error prefetching default variant IDs", err);
       }
     },
 
@@ -551,33 +530,25 @@ export default {
       return (container.textContent || container.innerText || "").trim();
     },
     filterProducts() {
-      console.log("🔎 Search query changed:", this.searchQuery);
-
       // Clear any existing timeout
       if (this.searchTimeout) {
-        console.log("⏱️ Clearing previous search timeout");
         clearTimeout(this.searchTimeout);
       }
 
       // Set new timeout
-      console.log("⏳ Setting new search timeout (300ms)");
       this.searchTimeout = setTimeout(() => {
-        console.log("⌛ Search timeout triggered, executing search");
         this.currentPage = 1; // Reset to first page when filtering
         this.fetchProducts();
       }, 300); // 300ms delay
     },
 
     async changePage(page) {
-      console.log("📄 Changing page to:", page);
       this.currentPage = page;
       await this.fetchProducts();
-      console.log("📜 Scrolling to top of product grid");
       this.$refs.productsGrid?.scrollIntoView({ behavior: "smooth" });
     },
 
     toggleCategory(category) {
-      console.log("📑 Category toggled:", category);
       const index = this.selectedCategories.indexOf(category);
       if (index > -1) {
         // Remove category if already selected
@@ -589,7 +560,6 @@ export default {
       this.currentPage = 1; // Reset to first page when changing category selection
     },
     toggleAllCategories() {
-      console.log("📑 All categories toggled");
       if (this.selectedCategories.length === 0) {
         // If none are selected, select all categories
         this.selectedCategories = this.categories.map((cat) => cat.name);
@@ -608,12 +578,13 @@ export default {
       this.detailAbortController = new AbortController();
       const { signal } = this.detailAbortController;
       const requestId = ++this.detailRequestId;
-      // Always start with the list product while we hydrate details
-      this.selectedProduct = product;
       this.selectedVariants = {};
       this.isDetailLoading = true;
 
-      // Fetch full product detail (variants) on demand without blocking on full image
+      // Get prefetched default variant ID (if available)
+      const defaultVariantId = this.defaultVariantIds[product.id] || null;
+
+      // Fetch full product detail (variants) - simplified endpoint, ~1 RPC
       try {
         const token = localStorage.getItem("decilo_token");
         if (!token) {
@@ -621,7 +592,7 @@ export default {
           return;
         }
 
-        const response = await fetch(`/decilo-api/products/${product.id}?include_image=false`, {
+        const response = await fetch(`/decilo-api/products/${product.id}`, {
           signal,
           headers: {
             Authorization: `Bearer ${token}`,
@@ -636,15 +607,19 @@ export default {
 
         const detail = await response.json();
         if (requestId !== this.detailRequestId) return;
-        // Merge detail into current selection but keep existing image until we fetch full image separately
+
+        // Merge detail into current selection, include prefetched variant ID
         this.selectedProduct = {
           ...product,
           ...detail,
-          image_url: product.image_url || "/static/images/product-placeholder.jpg",
+          image_url: product.image_url || "", // Checkout will fetch the real image
+          default_variant_product_id: defaultVariantId, // Pass to checkout for instant image load
         };
 
         // Pre-select first value of each variant if available, except Ear Impression Type
+        // Build object first, then assign once to trigger watcher only once
         if (this.selectedProduct?.variants) {
+          const preselected = {};
           this.selectedProduct.variants.forEach((variant) => {
             if (
               variant.values &&
@@ -652,9 +627,10 @@ export default {
               variant.attribute !== "Ear Impression Type" &&
               !variant.attribute.toLowerCase().includes("ear impression")
             ) {
-              this.selectedVariants[variant.attribute] = variant.values[0];
+              preselected[variant.attribute] = variant.values[0];
             }
           });
+          this.selectedVariants = preselected;
         }
       } catch (err) {
         if (err?.name === "AbortError") {
@@ -667,42 +643,8 @@ export default {
           this.isDetailLoading = false;
         }
       }
-
-      if (requestId !== this.detailRequestId || !this.selectedProduct) {
-        return;
-      }
-
-      // Fetch medium first (if needed) then upgrade to full resolution
-      try {
-        await this.fetchImagesForProducts([product.id], "medium", signal);
-        if (requestId !== this.detailRequestId || !this.selectedProduct) return;
-        const updated = this.products.find((p) => p.id === product.id);
-        if (updated?.image_url) {
-          this.selectedProduct = {
-            ...this.selectedProduct,
-            image_url: updated.image_url,
-          };
-        }
-
-        await this.fetchImagesForProducts([product.id], "full", signal);
-        if (requestId !== this.detailRequestId || !this.selectedProduct) return;
-        const updatedFull = this.products.find((p) => p.id === product.id);
-        if (updatedFull?.image_url) {
-          this.selectedProduct = {
-            ...this.selectedProduct,
-            image_url: updatedFull.image_url,
-          };
-        }
-      } catch (err) {
-        if (err?.name === "AbortError") {
-          return;
-        }
-        console.warn("⚠️ Error fetching full image", err);
-      }
-
-      if (requestId !== this.detailRequestId || !this.selectedProduct) {
-        return;
-      }
+      // Note: Image loading is handled by the checkout component's refreshVariantImage()
+      // which is triggered by the selectedVariants watcher. No need to fetch images here.
     },
 
     isSelectedVariant(attribute, value) {
