@@ -52,6 +52,18 @@
           </p>
           <p v-if="error" class="error-message">{{ error }}</p>
         </form>
+        <div class="login-language-selector">
+          <button
+            v-for="option in languageOptions"
+            :key="option.value"
+            class="login-language-btn"
+            :class="{ active: option.value === selectedLanguage }"
+            @click="selectLanguage(option.value)"
+          >
+            <span class="language-flag" :class="option.flagClass" aria-hidden="true"></span>
+            <span class="login-language-label">{{ option.label }}</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -190,6 +202,13 @@ export default {
     const storedLocale = localStorage.getItem('decilo_locale');
     if (storedLocale) {
       this.selectedLanguage = this.normalizeLanguage(storedLocale);
+    } else {
+      // Auto-detect from browser language for first-time visitors
+      const browserLang = navigator.language?.split('-')[0]?.toLowerCase();
+      if (['en', 'fr', 'nl'].includes(browserLang)) {
+        this.selectedLanguage = browserLang;
+        localStorage.setItem('decilo_locale', browserLang);
+      }
     }
     this.setLocale(this.selectedLanguage);
 
@@ -203,9 +222,12 @@ export default {
       } else {
         this.customerInfo = JSON.parse(storedUser);
         this.isLoggedIn = true;
-        this.selectedLanguage = this.normalizeLanguage(this.customerInfo.lang);
-        localStorage.setItem('decilo_locale', this.selectedLanguage);
-        this.setLocale(this.selectedLanguage);
+        // Only use customerInfo.lang if no explicit locale choice was stored
+        if (!storedLocale) {
+          this.selectedLanguage = this.normalizeLanguage(this.customerInfo.lang);
+          localStorage.setItem('decilo_locale', this.selectedLanguage);
+          this.setLocale(this.selectedLanguage);
+        }
       }
     }
   },
@@ -257,12 +279,20 @@ export default {
         // Store token and user info
         localStorage.setItem('decilo_token', data.token);
         localStorage.setItem('decilo_user', JSON.stringify(data.user));
-        
+
         this.customerInfo = data.user;
         this.isLoggedIn = true;
-        this.selectedLanguage = this.normalizeLanguage(data.user?.lang);
-        localStorage.setItem('decilo_locale', this.selectedLanguage);
-        
+
+        // Use stored locale if user previously set one, otherwise use Odoo's lang
+        const existingLocale = localStorage.getItem('decilo_locale');
+        if (existingLocale) {
+          this.selectedLanguage = this.normalizeLanguage(existingLocale);
+        } else {
+          this.selectedLanguage = this.normalizeLanguage(data.user?.lang);
+          localStorage.setItem('decilo_locale', this.selectedLanguage);
+        }
+        this.setLocale(this.selectedLanguage);
+
       } catch (err) {
         this.error = this.$t('login.failed');
       } finally {
@@ -289,8 +319,7 @@ export default {
       this.error = '';
       this.showProfileMenu = false;
       this.isLanguageOpen = false;
-      this.selectedLanguage = 'fr';
-      localStorage.removeItem('decilo_locale');
+      // Keep user's language preference, don't reset on logout
     },
     toggleLanguageDropdown() {
       this.isLanguageOpen = !this.isLanguageOpen;
@@ -795,5 +824,45 @@ export default {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Login page language selector */
+.login-language-selector {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.login-language-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  color: #888888;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.login-language-btn:hover {
+  border-color: #555555;
+  color: #cccccc;
+  background: #1a1a1a;
+}
+
+.login-language-btn.active {
+  border-color: #666666;
+  color: #ffffff;
+  background: #252525;
+}
+
+.login-language-label {
+  font-size: 12px;
 }
 </style>

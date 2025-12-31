@@ -81,7 +81,15 @@
               class="product-card"
             >
               <div class="product-image" @click="showProductDetails(product)">
-                <img :src="product.image_url" :alt="product.name" />
+                <img v-if="product.image_url" :src="product.image_url" :alt="product.name" />
+                <div v-else class="no-image-placeholder">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                  <span>{{ $t('catalog.noImage') }}</span>
+                </div>
                 <div class="image-overlay">
                   <span>{{ $t('catalog.order') }}</span>
                 </div>
@@ -284,7 +292,6 @@ export default {
         const blob = new Blob([byteArray], { type: mime });
         return URL.createObjectURL(blob);
       } catch (err) {
-        console.warn("⚠️ Failed to convert base64 to object URL", err);
         return null;
       }
     },
@@ -454,7 +461,6 @@ export default {
         });
 
         if (!response.ok) {
-          console.warn("⚠️ Failed to prefetch default variant IDs", response.status);
           return;
         }
 
@@ -462,7 +468,6 @@ export default {
         this.defaultVariantIds = data.variants || {};
       } catch (err) {
         // Silently fail - this is just an optimization
-        console.warn("⚠️ Error prefetching default variant IDs", err);
       }
     },
 
@@ -485,7 +490,6 @@ export default {
         });
 
         if (!response.ok) {
-          console.warn("⚠️ Unable to fetch product images", response.status);
           return;
         }
 
@@ -505,7 +509,6 @@ export default {
         if (err?.name === "AbortError") {
           return;
         }
-        console.warn("⚠️ Failed to hydrate product images", err);
       }
     },
 
@@ -588,7 +591,6 @@ export default {
       try {
         const token = localStorage.getItem("decilo_token");
         if (!token) {
-          console.warn("❌ No auth token found - cannot fetch product detail");
           return;
         }
 
@@ -601,12 +603,14 @@ export default {
         });
 
         if (!response.ok) {
-          console.warn("⚠️ Failed to fetch product detail", response.status);
           return;
         }
 
         const detail = await response.json();
-        if (requestId !== this.detailRequestId) return;
+
+        if (requestId !== this.detailRequestId) {
+          return;
+        }
 
         // Merge detail into current selection, include prefetched variant ID
         this.selectedProduct = {
@@ -636,7 +640,6 @@ export default {
         if (err?.name === "AbortError") {
           return;
         }
-        console.warn("⚠️ Error fetching product detail", err);
       }
       finally {
         if (requestId === this.detailRequestId) {
@@ -970,6 +973,33 @@ export default {
   border-radius: 16px;
   padding: 20px;
   transition: all 0.3s ease;
+}
+
+.no-image-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.8);
+  border-radius: 16px;
+  color: #64748b;
+}
+
+.no-image-placeholder svg {
+  width: 48px;
+  height: 48px;
+  opacity: 0.5;
+}
+
+.no-image-placeholder span {
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .image-overlay {

@@ -41,6 +41,10 @@ VARIANT_TEMPLATE_CACHE = {}
 VARIANT_IMAGE_CACHE = {}
 
 # Language mapping helpers
+# Default locale for the application (UI shorthand and Odoo code)
+DEFAULT_UI_LOCALE = 'fr'
+DEFAULT_ODOO_LOCALE = 'fr_BE'
+
 UI_TO_ODOO_LANG = {
     'en': 'en_US',
     'fr': 'fr_BE',  # use installed FR locale
@@ -59,9 +63,8 @@ ODOO_TO_UI_LANG = {
 
 def normalize_to_odoo_locale(locale_value):
     """Normalize various locale inputs to an Odoo-friendly locale code."""
-    default_locale = UI_TO_ODOO_LANG.get('en', 'en_US')
     if not locale_value:
-        return default_locale
+        return DEFAULT_ODOO_LOCALE
     val = str(locale_value).strip()
     lower_val = val.lower()
 
@@ -82,12 +85,12 @@ def normalize_to_odoo_locale(locale_value):
             if normalized == v.lower():
                 return v
 
-    return default_locale
+    return DEFAULT_ODOO_LOCALE
 
 def normalize_to_ui_language(locale_value):
-    """Normalize an Odoo locale to UI shorthand (en/fr/nl), defaulting to fr."""
+    """Normalize an Odoo locale to UI shorthand (en/fr/nl)."""
     if not locale_value:
-        return 'fr'
+        return DEFAULT_UI_LOCALE
     val = str(locale_value).strip()
     lower_val = val.lower().replace('-', '_')
     for odoo_lang, ui_lang in ODOO_TO_UI_LANG.items():
@@ -95,11 +98,11 @@ def normalize_to_ui_language(locale_value):
             return ui_lang
     if lower_val in UI_TO_ODOO_LANG:
         return lower_val
-    return 'fr'
+    return DEFAULT_UI_LOCALE
 
 def get_request_locale():
-    """Return the current request locale (Odoo code), defaulting to en_US."""
-    return getattr(g, 'decilo_locale', 'en_US')
+    """Return the current request locale (Odoo code)."""
+    return getattr(g, 'decilo_locale', DEFAULT_ODOO_LOCALE)
 
 def create_token(user_data):
     """Create a JWT token for the user"""

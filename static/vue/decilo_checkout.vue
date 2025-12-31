@@ -44,6 +44,14 @@
               @load="onImageLoaded"
               @error="onImageError"
             >
+            <div v-if="!activeImageUrl && !isImageLoading" class="no-image-placeholder">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              <span>{{ $t('catalog.noImage') }}</span>
+            </div>
             <div v-if="isImageLoading" class="image-loading-overlay">
               <div class="loading-spinner-large"></div>
             </div>
@@ -1821,6 +1829,30 @@ export default {
 
 .modal-product-image:hover img {
   transform: scale(1.05);
+}
+
+.modal-product-image .no-image-placeholder {
+  width: 100%;
+  height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.8);
+  border-radius: 16px;
+  color: #64748b;
+}
+
+.modal-product-image .no-image-placeholder svg {
+  width: 64px;
+  height: 64px;
+  opacity: 0.5;
+}
+
+.modal-product-image .no-image-placeholder span {
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .modal-product-info {

@@ -25,6 +25,7 @@ window.DeciloI18nMessages = {
       categories: 'Categories',
       allCategories: 'All Categories',
       noProducts: 'No products found',
+      noImage: 'No image available',
       order: 'Order',
       previous: 'Previous',
       next: 'Next'
@@ -175,6 +176,7 @@ window.DeciloI18nMessages = {
       categories: 'Catégories',
       allCategories: 'Toutes les catégories',
       noProducts: 'Aucun produit trouvé',
+      noImage: 'Aucune image disponible',
       order: 'Commander',
       previous: 'Précédent',
       next: 'Suivant'
@@ -325,6 +327,7 @@ window.DeciloI18nMessages = {
       categories: 'Categorieën',
       allCategories: 'Alle categorieën',
       noProducts: 'Geen producten gevonden',
+      noImage: 'Geen afbeelding beschikbaar',
       order: 'Bestellen',
       previous: 'Vorige',
       next: 'Volgende'
