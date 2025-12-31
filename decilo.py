@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, Response, g
+from flask import Blueprint, jsonify, request, Response, g, copy_current_request_context
 import xmlrpc.client
 import os
 from dotenv import load_dotenv
@@ -10,6 +10,7 @@ import base64
 import imghdr
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 #  Configure logging
 logging.basicConfig(
@@ -184,6 +185,15 @@ def get_odoo_models():
     except Exception as e:
         logger.error(f"Failed to connect to Odoo models endpoint: {str(e)}")
         raise
+
+def get_thread_safe_models(locale):
+    """Get Odoo models proxy with a fixed locale for thread-safe usage.
+
+    Use this instead of get_odoo_models() when making RPC calls from threads,
+    since g.decilo_locale may not be accessible in copied request contexts.
+    """
+    base_models = xmlrpc.client.ServerProxy(f'{ODOO_URL}/xmlrpc/2/object', allow_none=True)
+    return OdooModelsProxy(base_models, lambda: locale)
 
 def get_uid():
     """Get Odoo user ID"""
@@ -951,55 +961,78 @@ def get_default_variant_ids(current_user):
         uid = get_uid()
         models = get_odoo_models()
 
-        # Get all published product IDs
+        # Get all published products in one call (combined search + read)
         domain = [
             ('sale_ok', '=', True),
             ('x_studio_is_published_b2audio', '=', True)
         ]
 
-        product_ids = models.execute_kw(
-            ODOO_DB, uid, ODOO_API_KEY,
-            'product.template', 'search',
-            [domain]
-        )
-
-        if not product_ids:
-            return jsonify({'variants': {}})
-
-        # BULK FETCH 1: Get products with attribute_line_ids and product_variant_id
         products = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
-            'product.template', 'read',
-            [product_ids],
+            'product.template', 'search_read',
+            [domain],
             {'fields': ['id', 'attribute_line_ids', 'product_variant_id']}
         )
-        products_by_id = {p['id']: p for p in products}
+
+        if not products:
+            return jsonify({'variants': {}})
+
+        product_ids = [p['id'] for p in products]
 
         # Collect all attribute line IDs for batch fetch
-        all_attr_line_ids = []
-        for p in products:
-            all_attr_line_ids.extend(p.get('attribute_line_ids', []))
+        all_attr_line_ids = list(set(
+            line_id
+            for p in products
+            for line_id in p.get('attribute_line_ids', [])
+        ))
 
-        # BULK FETCH 2: Batch fetch all attribute lines
-        attr_lines_by_id = {}
-        if all_attr_line_ids:
-            attr_lines = models.execute_kw(
+        # Capture locale before spawning threads (g.decilo_locale is not thread-safe)
+        request_locale = get_request_locale()
+
+        # Define fetch functions for parallel execution
+        # Each thread needs its own models proxy (XML-RPC connections aren't thread-safe)
+        def fetch_attr_lines():
+            if not all_attr_line_ids:
+                return []
+            thread_models = get_thread_safe_models(request_locale)
+            return thread_models.execute_kw(
                 ODOO_DB, uid, ODOO_API_KEY,
                 'product.template.attribute.line', 'read',
-                [list(set(all_attr_line_ids))],
+                [all_attr_line_ids],
                 {'fields': ['id', 'attribute_id', 'value_ids']}
             )
-            attr_lines_by_id = {al['id']: al for al in attr_lines}
 
-        # BULK FETCH 3: Get all PTAVs for all products at once
-        all_ptavs = models.execute_kw(
-            ODOO_DB, uid, ODOO_API_KEY,
-            'product.template.attribute.value', 'search_read',
-            [[('product_tmpl_id', 'in', product_ids)]],
-            {'fields': ['id', 'product_tmpl_id', 'product_attribute_value_id']}
-        )
+        def fetch_ptavs():
+            thread_models = get_thread_safe_models(request_locale)
+            return thread_models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.template.attribute.value', 'search_read',
+                [[('product_tmpl_id', 'in', product_ids)]],
+                {'fields': ['id', 'product_tmpl_id', 'product_attribute_value_id']}
+            )
 
-        # BULK FETCH 4: Get all attributes (for ear impression check)
+        def fetch_variants():
+            thread_models = get_thread_safe_models(request_locale)
+            return thread_models.execute_kw(
+                ODOO_DB, uid, ODOO_API_KEY,
+                'product.product', 'search_read',
+                [[('product_tmpl_id', 'in', product_ids)]],
+                {'fields': ['id', 'product_tmpl_id', 'product_template_attribute_value_ids']}
+            )
+
+        # Execute attribute lines, PTAVs, and variants in parallel
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_attr_lines = executor.submit(copy_current_request_context(fetch_attr_lines))
+            future_ptavs = executor.submit(copy_current_request_context(fetch_ptavs))
+            future_variants = executor.submit(copy_current_request_context(fetch_variants))
+
+            attr_lines = future_attr_lines.result()
+            all_ptavs = future_ptavs.result()
+            all_variants = future_variants.result()
+
+        attr_lines_by_id = {al['id']: al for al in attr_lines}
+
+        # Fetch attributes for ear impression check (depends on attr_lines)
         attr_ids = list(set(
             line['attribute_id'][0]
             for line in attr_lines_by_id.values()
@@ -1011,14 +1044,6 @@ def get_default_variant_ids(current_user):
             [[('id', 'in', attr_ids)]],
             {'fields': ['id', 'name']}
         ) if attr_ids else []
-
-        # BULK FETCH 5: Get all product.product variants
-        all_variants = models.execute_kw(
-            ODOO_DB, uid, ODOO_API_KEY,
-            'product.product', 'search_read',
-            [[('product_tmpl_id', 'in', product_ids)]],
-            {'fields': ['id', 'product_tmpl_id', 'product_template_attribute_value_ids']}
-        )
 
         # Build per-template lookup structures (no RPC calls needed)
         # Map: product_template_id -> { pav_id -> ptav_id }
