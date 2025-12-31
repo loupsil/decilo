@@ -966,20 +966,21 @@ def get_default_variant_ids(current_user):
         if not product_ids:
             return jsonify({'variants': {}})
 
-        # Get products with attribute_line_ids in one call
+        # BULK FETCH 1: Get products with attribute_line_ids and product_variant_id
         products = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.template', 'read',
             [product_ids],
-            {'fields': ['id', 'attribute_line_ids']}
+            {'fields': ['id', 'attribute_line_ids', 'product_variant_id']}
         )
+        products_by_id = {p['id']: p for p in products}
 
         # Collect all attribute line IDs for batch fetch
         all_attr_line_ids = []
         for p in products:
             all_attr_line_ids.extend(p.get('attribute_line_ids', []))
 
-        # Batch fetch all attribute lines
+        # BULK FETCH 2: Batch fetch all attribute lines
         attr_lines_by_id = {}
         if all_attr_line_ids:
             attr_lines = models.execute_kw(
@@ -990,56 +991,156 @@ def get_default_variant_ids(current_user):
             )
             attr_lines_by_id = {al['id']: al for al in attr_lines}
 
-        # Collect all value IDs for batch fetch
-        all_value_ids = []
-        for al in attr_lines_by_id.values():
-            all_value_ids.extend(al.get('value_ids', []))
+        # BULK FETCH 3: Get all PTAVs for all products at once
+        all_ptavs = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template.attribute.value', 'search_read',
+            [[('product_tmpl_id', 'in', product_ids)]],
+            {'fields': ['id', 'product_tmpl_id', 'product_attribute_value_id']}
+        )
 
-        # Batch fetch all attribute values
-        values_by_id = {}
-        if all_value_ids:
-            values = models.execute_kw(
-                ODOO_DB, uid, ODOO_API_KEY,
-                'product.attribute.value', 'read',
-                [list(set(all_value_ids))],
-                {'fields': ['id', 'name']}
-            )
-            values_by_id = {v['id']: v['name'] for v in values}
+        # BULK FETCH 4: Get all attributes (for ear impression check)
+        attr_ids = list(set(
+            line['attribute_id'][0]
+            for line in attr_lines_by_id.values()
+            if line.get('attribute_id')
+        ))
+        all_attrs = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.attribute', 'search_read',
+            [[('id', 'in', attr_ids)]],
+            {'fields': ['id', 'name']}
+        ) if attr_ids else []
 
-        # Now resolve default variant for each product
+        # BULK FETCH 5: Get all product.product variants
+        all_variants = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.product', 'search_read',
+            [[('product_tmpl_id', 'in', product_ids)]],
+            {'fields': ['id', 'product_tmpl_id', 'product_template_attribute_value_ids']}
+        )
+
+        # Build per-template lookup structures (no RPC calls needed)
+        # Map: product_template_id -> { pav_id -> ptav_id }
+        # Using PAV IDs (product.attribute.value) for robust matching instead of names
+        pav_to_ptav_by_template = {}
+        for ptav in all_ptavs:
+            tmpl_id = ptav['product_tmpl_id'][0] if isinstance(ptav.get('product_tmpl_id'), (list, tuple)) else ptav.get('product_tmpl_id')
+            if not tmpl_id:
+                continue
+            pav_ref = ptav.get('product_attribute_value_id')
+            pav_id = pav_ref[0] if isinstance(pav_ref, (list, tuple)) else pav_ref
+            if pav_id:
+                if tmpl_id not in pav_to_ptav_by_template:
+                    pav_to_ptav_by_template[tmpl_id] = {}
+                pav_to_ptav_by_template[tmpl_id][pav_id] = ptav['id']
+
+        # Map: product_template_id -> list of candidate variants with their PTAVs
+        candidates_by_template = {}
+        for variant in all_variants:
+            tmpl_id = variant['product_tmpl_id'][0] if isinstance(variant.get('product_tmpl_id'), (list, tuple)) else variant.get('product_tmpl_id')
+            if not tmpl_id:
+                continue
+            if tmpl_id not in candidates_by_template:
+                candidates_by_template[tmpl_id] = []
+            candidates_by_template[tmpl_id].append({
+                'id': variant['id'],
+                'ptavs': set(variant.get('product_template_attribute_value_ids', []))
+            })
+
+        # Build set of "ear impression" attribute IDs to skip (using IDs, not names)
+        ear_impression_attr_ids = set()
+        for attr in all_attrs:
+            if 'ear impression' in attr.get('name', '').lower():
+                ear_impression_attr_ids.add(attr['id'])
+
+        # Now resolve default variant for each product (no RPC calls!)
         result = {}
         for product in products:
             product_id = product['id']
             attr_line_ids = product.get('attribute_line_ids', [])
 
             if not attr_line_ids:
-                # No variants - use template's default variant
-                variant_id, _, _ = resolve_variant_from_cache(models, uid, product_id, {})
-                if variant_id:
+                # No variants - use template's default variant (already fetched)
+                default_variant = product.get('product_variant_id')
+                if default_variant:
+                    variant_id = default_variant[0] if isinstance(default_variant, (list, tuple)) else default_variant
                     result[product_id] = variant_id
+                else:
+                    # Fallback to first candidate
+                    candidates = candidates_by_template.get(product_id, [])
+                    if candidates:
+                        result[product_id] = candidates[0]['id']
                 continue
 
-            # Compute default selections (first value of each attribute, skip ear impression)
-            default_selections = {}
+            # Compute default selections as PAV IDs (first value of each attribute, skip ear impression)
+            # Using IDs instead of names for robust matching across locales
+            default_pav_ids = []
             for line_id in attr_line_ids:
                 line = attr_lines_by_id.get(line_id, {})
-                attr_name = line.get('attribute_id', [0, ''])[1]
+                attr_ref = line.get('attribute_id', [0, ''])
+                attr_id = attr_ref[0] if isinstance(attr_ref, (list, tuple)) else attr_ref
                 value_ids = line.get('value_ids', [])
 
                 # Skip ear impression attributes
-                if 'ear impression' in attr_name.lower():
+                if attr_id in ear_impression_attr_ids:
                     continue
 
-                # Get first value
+                # Get first value (as PAV ID)
                 if value_ids:
-                    first_value = values_by_id.get(value_ids[0], '')
-                    if first_value:
-                        default_selections[attr_name] = first_value
+                    default_pav_ids.append(value_ids[0])
 
-            # Resolve variant
-            variant_id, _, err = resolve_variant_from_cache(models, uid, product_id, default_selections)
-            if variant_id:
-                result[product_id] = variant_id
+            # Resolve variant locally (no RPC calls!)
+            pav_to_ptav = pav_to_ptav_by_template.get(product_id, {})
+            candidates = candidates_by_template.get(product_id, [])
+
+            if not default_pav_ids:
+                # No selections needed, use default variant or first candidate
+                default_variant = product.get('product_variant_id')
+                if default_variant:
+                    variant_id = default_variant[0] if isinstance(default_variant, (list, tuple)) else default_variant
+                    result[product_id] = variant_id
+                elif candidates:
+                    result[product_id] = candidates[0]['id']
+                continue
+
+            # Convert PAV IDs to PTAV IDs
+            needed_ptavs = []
+            for pav_id in default_pav_ids:
+                ptav_id = pav_to_ptav.get(pav_id)
+                if ptav_id:
+                    needed_ptavs.append(ptav_id)
+
+            # Guard: if we couldn't map all PAV IDs to PTAVs, fall back to default variant
+            if len(needed_ptavs) != len(default_pav_ids):
+                logger.warning(f"Product {product_id}: Could not map all PAV IDs to PTAVs "
+                             f"({len(needed_ptavs)}/{len(default_pav_ids)}), using default variant")
+                default_variant = product.get('product_variant_id')
+                if default_variant:
+                    variant_id = default_variant[0] if isinstance(default_variant, (list, tuple)) else default_variant
+                    result[product_id] = variant_id
+                elif candidates:
+                    result[product_id] = candidates[0]['id']
+                continue
+
+            # Find matching variant
+            needed = set(needed_ptavs)
+            matched = False
+            for c in candidates:
+                if needed.issubset(c.get('ptavs', set())):
+                    result[product_id] = c['id']
+                    matched = True
+                    break
+
+            # If no match found, fall back to default variant
+            if not matched:
+                logger.warning(f"Product {product_id}: No variant matched PTAVs {needed}, using default variant")
+                default_variant = product.get('product_variant_id')
+                if default_variant:
+                    variant_id = default_variant[0] if isinstance(default_variant, (list, tuple)) else default_variant
+                    result[product_id] = variant_id
+                elif candidates:
+                    result[product_id] = candidates[0]['id']
 
         return jsonify({'variants': result})
 
