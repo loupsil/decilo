@@ -696,13 +696,16 @@ export default {
             // Fast path: if we have prefetched variant ID, fetch image directly (1 RPC)
             const variantId = newProduct.default_variant_product_id;
             if (variantId) {
+              // Capture request ID to detect if user selected a different variant before this resolves
+              const prefetchRequestId = this.imageRequestId;
               this.fetchImageByVariantId(variantId, 'medium').then((imageUrl) => {
-                if (imageUrl && this.selectedProduct?.id === newProduct.id) {
+                // Only apply if no variant selection happened since we started
+                if (imageUrl && this.selectedProduct?.id === newProduct.id && prefetchRequestId === this.imageRequestId) {
                   this.activeImageUrl = imageUrl;
                   this.isImageLoading = false;
                   // Fetch full resolution in background
                   this.fetchImageByVariantId(variantId, 'full').then((fullUrl) => {
-                    if (fullUrl && this.selectedProduct?.id === newProduct.id) {
+                    if (fullUrl && this.selectedProduct?.id === newProduct.id && prefetchRequestId === this.imageRequestId) {
                       this.activeImageUrl = fullUrl;
                     }
                   });
@@ -1178,6 +1181,8 @@ export default {
 
       // Avoid duplicate requests for the same selection set
       if (fullKey === this.lastImageVariantKey) {
+        // Still increment to cancel any in-flight requests for different variants
+        this.imageRequestId += 1
         return
       }
 
