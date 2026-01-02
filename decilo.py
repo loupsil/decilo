@@ -40,6 +40,9 @@ VARIANT_TEMPLATE_CACHE_TTL = 30 * 60  # 30 minutes
 VARIANT_IMAGE_CACHE_TTL = 30 * 60
 VARIANT_TEMPLATE_CACHE = {}
 VARIANT_IMAGE_CACHE = {}
+# Cached default variant lookup for all published products (per locale)
+DEFAULT_VARIANTS_CACHE_TTL = 10 * 60  # 10 minutes
+DEFAULT_VARIANTS_CACHE = {}
 
 # Language mapping helpers
 # Default locale for the application (UI shorthand and Odoo code)
@@ -1000,6 +1003,13 @@ def get_default_variant_ids(current_user):
         { "variants": { product_template_id: variant_product_id, ... } }
     """
     try:
+        now = time.time()
+        locale = get_request_locale()
+        cache_key = (locale,)
+        cached = DEFAULT_VARIANTS_CACHE.get(cache_key)
+        if cached and cached.get('expires_at', 0) > now:
+            return jsonify(cached['payload'])
+
         uid = get_uid()
         models = get_odoo_models()
 
@@ -1209,7 +1219,12 @@ def get_default_variant_ids(current_user):
                 elif candidates:
                     result[product_id] = candidates[0]['id']
 
-        return jsonify({'variants': result})
+        payload = {'variants': result}
+        DEFAULT_VARIANTS_CACHE[cache_key] = {
+            'payload': payload,
+            'expires_at': now + DEFAULT_VARIANTS_CACHE_TTL
+        }
+        return jsonify(payload)
 
     except Exception as e:
         error_msg = f"Error fetching default variants: {str(e)}"

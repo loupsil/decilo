@@ -167,6 +167,9 @@ import DeciloCheckout from "./decilo_checkout.vue";
 
 // Simple in-memory cache for product list responses (persists for the session)
 const productCache = new Map();
+const defaultVariantsCache = new Map();
+const DEFAULT_VARIANTS_CACHE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_VARIANTS_STORAGE_PREFIX = "decilo_default_variants_";
 
 // Click outside directive
 const clickOutside = {
@@ -215,6 +218,8 @@ export default {
       detailRequestId: 0,
       detailAbortController: null,
       defaultVariantIds: {}, // Prefetched default variant IDs for instant image loading
+      defaultVariantsPrefetchScheduled: false,
+      defaultVariantsRequestInFlight: false,
     };
   },
   computed: {
@@ -270,6 +275,7 @@ export default {
       this.categories = [];
       this.selectedProduct = null;
       this.selectedVariants = {};
+      this.defaultVariantIds = {};
       this.currentPage = 1;
       await this.fetchProducts();
       if (previouslySelectedId) {
@@ -320,10 +326,8 @@ export default {
           this.imageSize
         );
         this.isLoading = false;
-        // Also prefetch variant IDs when using cache (if not already fetched)
-        if (Object.keys(this.defaultVariantIds).length === 0) {
-          this.prefetchDefaultVariantIds();
-        }
+        // Also prefetch variant IDs when using cache
+        this.scheduleDefaultVariantPrefetch();
         return;
       }
 
@@ -446,10 +450,29 @@ export default {
       } finally {
         this.isLoading = false;
         // Start background prefetch of default variant IDs (non-blocking)
-        // Only prefetch if we don't have them yet - variant IDs are locale-independent
-        if (Object.keys(this.defaultVariantIds).length === 0) {
-          this.prefetchDefaultVariantIds();
-        }
+        this.scheduleDefaultVariantPrefetch();
+      }
+    },
+
+    scheduleDefaultVariantPrefetch() {
+      if (
+        this.defaultVariantsPrefetchScheduled ||
+        this.defaultVariantsRequestInFlight ||
+        (this.defaultVariantIds && Object.keys(this.defaultVariantIds).length > 0)
+      ) {
+        return;
+      }
+
+      const triggerPrefetch = () => {
+        this.defaultVariantsPrefetchScheduled = false;
+        this.prefetchDefaultVariantIds();
+      };
+
+      this.defaultVariantsPrefetchScheduled = true;
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        window.requestIdleCallback(triggerPrefetch, { timeout: 5000 });
+      } else {
+        setTimeout(triggerPrefetch, 1500);
       }
     },
 
@@ -457,6 +480,38 @@ export default {
       // Background prefetch - runs silently after catalog renders
       const token = localStorage.getItem("decilo_token");
       if (!token) return;
+      if (this.isTokenExpired(token)) {
+        this.handleTokenExpired();
+        return;
+      }
+
+      const locale = this.locale || "fr";
+      const cacheKey = `${DEFAULT_VARIANTS_STORAGE_PREFIX}${locale}`;
+      const now = Date.now();
+      const memoryCached = defaultVariantsCache.get(cacheKey);
+      if (memoryCached && memoryCached.expiresAt > now) {
+        this.defaultVariantIds = memoryCached.variants || {};
+        return;
+      }
+
+      try {
+        const stored = localStorage.getItem(cacheKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.expiresAt > now && parsed.variants) {
+            this.defaultVariantIds = parsed.variants || {};
+            defaultVariantsCache.set(cacheKey, {
+              variants: this.defaultVariantIds,
+              expiresAt: parsed.expiresAt,
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        // Ignore cache parse errors and proceed to fetch
+      }
+
+      this.defaultVariantsRequestInFlight = true;
 
       try {
         const response = await fetch("/decilo-api/products/default-variants", {
@@ -470,9 +525,30 @@ export default {
         }
 
         const data = await response.json();
-        this.defaultVariantIds = data.variants || {};
+        const variants = data.variants || {};
+        defaultVariantsCache.set(cacheKey, {
+          variants,
+          expiresAt: now + DEFAULT_VARIANTS_CACHE_TTL_MS,
+        });
+        try {
+          localStorage.setItem(
+            cacheKey,
+            JSON.stringify({
+              variants,
+              expiresAt: now + DEFAULT_VARIANTS_CACHE_TTL_MS,
+            })
+          );
+        } catch (err) {
+          // Ignore storage errors (private mode/quota)
+        }
+        if ((this.locale || "fr") !== locale) {
+          return;
+        }
+        this.defaultVariantIds = variants;
       } catch (err) {
         // Silently fail - this is just an optimization
+      } finally {
+        this.defaultVariantsRequestInFlight = false;
       }
     },
 
