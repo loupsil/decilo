@@ -564,9 +564,11 @@ class OdooXMLRPCClient(OdooClient):
 
             variants = []
             for line in attr_lines:
+                ordered_value_ids = [val_id for val_id in line.get('value_ids', []) if val_id in values_by_id]
                 variants.append({
                     'attribute': line['attribute_id'][1],  # [1] contains the name
-                    'values': [values_by_id[val_id] for val_id in line.get('value_ids', []) if val_id in values_by_id]
+                    'values': [values_by_id[val_id] for val_id in ordered_value_ids],
+                    'value_ids': ordered_value_ids
                 })
             
             # Add variants to product data
@@ -612,10 +614,12 @@ class OdooXMLRPCClient(OdooClient):
                 [line['value_ids']],
                 {'fields': ['name']}
             )
-            
+            values_by_id = {val['id']: val['name'] for val in values or []}
+            ordered_value_ids = [val_id for val_id in line.get('value_ids', []) if val_id in values_by_id]
             variants.append({
                 'attribute': line['attribute_id'][1],
-                'values': [val['name'] for val in values]
+                'values': [values_by_id[val_id] for val_id in ordered_value_ids],
+                'value_ids': ordered_value_ids
             })
             
         return variants
@@ -787,6 +791,7 @@ def get_template_variant_cache(models, uid, product_template_id):
 
     # Build map: (attribute_name, value_name) -> PTAV id (lowercased for lookup)
     attr_val_to_ptav = {}
+    pav_to_ptav = {}
     for rec in ptav_records or []:
         pav = rec.get('product_attribute_value_id')
         pav_id = pav[0] if isinstance(pav, (list, tuple)) else pav
@@ -798,6 +803,8 @@ def get_template_variant_cache(models, uid, product_template_id):
         key = (attr_name.strip().lower(), val_name.strip().lower())
         if key[0] and key[1]:
             attr_val_to_ptav[key] = rec['id']
+        if pav_id:
+            pav_to_ptav[pav_id] = rec['id']
 
     # Cache candidate variants once
     candidate_ids = models.execute_kw(
@@ -818,6 +825,7 @@ def get_template_variant_cache(models, uid, product_template_id):
 
     cached = {
         'attr_val_to_ptav': attr_val_to_ptav,
+        'pav_to_ptav': pav_to_ptav,
         'candidates': candidates,
         'expires_at': now + VARIANT_TEMPLATE_CACHE_TTL
     }
@@ -850,6 +858,40 @@ def resolve_variant_from_cache(models, uid, product_template_id, selected_varian
         ptav = attr_val_to_ptav.get(key)
         if not ptav:
             return None, needed_ptavs, f"Option '{attr_name}: {val_name}' not available for this product"
+        needed_ptavs.append(ptav)
+
+    needed = set(needed_ptavs)
+    for c in candidates:
+        ptavs = c.get('ptavs') or set()
+        if needed.issubset(ptavs):
+            return c['id'], needed_ptavs, None
+
+    return None, needed_ptavs, "Could not resolve product variant for the selected options"
+
+def resolve_variant_from_cache_by_pav_ids(models, uid, product_template_id, selected_pav_ids):
+    """Resolve variant using cached per-template metadata and PAV IDs."""
+    cache = get_template_variant_cache(models, uid, product_template_id)
+    needed_ptavs = []
+    pav_to_ptav = cache.get('pav_to_ptav', {})
+    candidates = cache.get('candidates', [])
+
+    # No selections: use template default variant if possible
+    if not selected_pav_ids:
+        tmpl_rec = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.template', 'read',
+            [product_template_id],
+            {'fields': ['product_variant_id']}
+        )
+        if tmpl_rec and tmpl_rec[0].get('product_variant_id'):
+            return tmpl_rec[0]['product_variant_id'][0], needed_ptavs, None
+        if candidates:
+            return candidates[0].get('id'), needed_ptavs, None
+
+    for pav_id in selected_pav_ids:
+        ptav = pav_to_ptav.get(pav_id)
+        if not ptav:
+            return None, needed_ptavs, f"Option value ID '{pav_id}' not available for this product"
         needed_ptavs.append(ptav)
 
     needed = set(needed_ptavs)
@@ -2381,11 +2423,15 @@ def get_variant_image(current_user, product_id: int):
         models = get_odoo_models()
         payload = request.get_json(silent=True) or {}
         selected_variants = payload.get('selected_variants') or {}
+        selected_variant_ids = payload.get('selected_variant_ids') or {}
         if selected_variants and not isinstance(selected_variants, dict):
             return jsonify({'error': 'selected_variants must be a JSON object'}), 400
+        if selected_variant_ids and not isinstance(selected_variant_ids, dict):
+            return jsonify({'error': 'selected_variant_ids must be a JSON object'}), 400
 
         size = payload.get('size', 'full')
-        cache_key = (product_id, size, json.dumps(sorted(selected_variants.items())))
+        cache_input = selected_variant_ids if selected_variant_ids else selected_variants
+        cache_key = (product_id, size, json.dumps(sorted(cache_input.items())))
         now = time.time()
 
         # Fast path: reuse fully cached payload for this selection/size
@@ -2394,7 +2440,24 @@ def get_variant_image(current_user, product_id: int):
             return jsonify(cached_payload['payload'])
 
         # Resolve variant using cached template metadata to avoid repeated RPCs
-        variant_product_id, ptav_ids, variant_error = resolve_variant_from_cache(models, uid, product_id, selected_variants)
+        variant_product_id = None
+        ptav_ids = []
+        variant_error = None
+        selected_pav_ids = []
+        use_id_resolution = bool(selected_variant_ids)
+        if use_id_resolution:
+            for attr_name, pav_id in selected_variant_ids.items():
+                try:
+                    selected_pav_ids.append(int(pav_id))
+                except (TypeError, ValueError):
+                    return jsonify({'error': f"Invalid variant ID for '{attr_name}': expected integer, got '{pav_id}'"}), 400
+            variant_product_id, ptav_ids, variant_error = resolve_variant_from_cache_by_pav_ids(
+                models, uid, product_id, selected_pav_ids
+            )
+        else:
+            variant_product_id, ptav_ids, variant_error = resolve_variant_from_cache(
+                models, uid, product_id, selected_variants
+            )
         if variant_error:
             return jsonify({'error': variant_error}), 400
 

@@ -1120,14 +1120,37 @@ export default {
       this.resetOrderForm();
     },
 
+    buildSelectedVariantIds(selections) {
+      const ids = {}
+      const variants = this.selectedProduct?.variants || []
+      for (const variant of variants) {
+        const attribute = variant?.attribute
+        if (!attribute) continue
+        const selectedValue = selections?.[attribute]
+        if (!selectedValue) continue
+        const values = Array.isArray(variant.values) ? variant.values : []
+        const valueIds = Array.isArray(variant.value_ids) ? variant.value_ids : []
+        const idx = values.indexOf(selectedValue)
+        if (idx >= 0 && valueIds[idx]) {
+          ids[attribute] = valueIds[idx]
+        }
+      }
+      return ids
+    },
+
     async fetchVariantImageWithSize(productId, selections, size, token) {
+      const selectedVariantIds = this.buildSelectedVariantIds(selections)
       const res = await fetch(`/decilo-api/products/${encodeURIComponent(productId)}/variant-image`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ selected_variants: selections, size })
+        body: JSON.stringify({
+          selected_variants: selections,
+          selected_variant_ids: selectedVariantIds,
+          size
+        })
       })
       if (!res.ok) {
         throw new Error(`Variant image request failed with status ${res.status}`)
