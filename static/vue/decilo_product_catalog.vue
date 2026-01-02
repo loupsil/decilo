@@ -220,6 +220,7 @@ export default {
       defaultVariantIds: {}, // Prefetched default variant IDs for instant image loading
       defaultVariantsPrefetchScheduled: false,
       defaultVariantsRequestInFlight: false,
+      defaultVariantsAbortController: null, // AbortController to cancel in-flight request on locale change
     };
   },
   computed: {
@@ -268,6 +269,12 @@ export default {
   },
   methods: {
     async onLocaleChanged() {
+      // Cancel any in-flight default-variants request to free up Odoo workers
+      if (this.defaultVariantsAbortController) {
+        this.defaultVariantsAbortController.abort();
+        this.defaultVariantsAbortController = null;
+        this.defaultVariantsRequestInFlight = false;
+      }
       // Clear cached responses and refetch everything in the new locale
       productCache.clear();
       const previouslySelectedId = this.selectedProduct?.id;
@@ -512,12 +519,15 @@ export default {
       }
 
       this.defaultVariantsRequestInFlight = true;
+      // Create AbortController so request can be cancelled on locale change
+      this.defaultVariantsAbortController = new AbortController();
 
       try {
         const response = await fetch("/decilo-api/products/default-variants", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          signal: this.defaultVariantsAbortController.signal,
         });
 
         if (!response.ok) {
@@ -546,9 +556,10 @@ export default {
         }
         this.defaultVariantIds = variants;
       } catch (err) {
-        // Silently fail - this is just an optimization
+        // Silently fail - this is just an optimization (AbortError is expected on locale change)
       } finally {
         this.defaultVariantsRequestInFlight = false;
+        this.defaultVariantsAbortController = null;
       }
     },
 
