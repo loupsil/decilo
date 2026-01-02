@@ -320,8 +320,10 @@ export default {
           this.imageSize
         );
         this.isLoading = false;
-        // Also prefetch variant IDs when using cache
-        this.prefetchDefaultVariantIds();
+        // Also prefetch variant IDs when using cache (if not already fetched)
+        if (Object.keys(this.defaultVariantIds).length === 0) {
+          this.prefetchDefaultVariantIds();
+        }
         return;
       }
 
@@ -444,7 +446,10 @@ export default {
       } finally {
         this.isLoading = false;
         // Start background prefetch of default variant IDs (non-blocking)
-        this.prefetchDefaultVariantIds();
+        // Only prefetch if we don't have them yet - variant IDs are locale-independent
+        if (Object.keys(this.defaultVariantIds).length === 0) {
+          this.prefetchDefaultVariantIds();
+        }
       }
     },
 
