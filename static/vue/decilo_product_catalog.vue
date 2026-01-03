@@ -219,6 +219,7 @@ export default {
       detailAbortController: null,
       defaultVariantIds: {}, // Prefetched default variant IDs for instant image loading
       defaultVariantsPrefetchScheduled: false,
+      defaultVariantsPrefetchTimeoutId: null, // Timeout handle to cancel scheduled prefetch
       defaultVariantsRequestInFlight: false,
       defaultVariantsAbortController: null, // AbortController to cancel in-flight request on locale change
       productsAbortController: null, // AbortController to cancel in-flight /products request on locale change
@@ -270,10 +271,15 @@ export default {
   },
   methods: {
     async onLocaleChanged() {
-      // Cancel any in-flight requests to free up Odoo workers
+      // Cancel any scheduled or in-flight requests to free up Odoo workers
       if (this.productsAbortController) {
         this.productsAbortController.abort();
         this.productsAbortController = null;
+      }
+      if (this.defaultVariantsPrefetchTimeoutId) {
+        clearTimeout(this.defaultVariantsPrefetchTimeoutId);
+        this.defaultVariantsPrefetchTimeoutId = null;
+        this.defaultVariantsPrefetchScheduled = false;
       }
       if (this.defaultVariantsAbortController) {
         this.defaultVariantsAbortController.abort();
@@ -487,11 +493,11 @@ export default {
         this.prefetchDefaultVariantIds();
       };
 
-      this.defaultVariantsPrefetchScheduled = true;
-      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-        window.requestIdleCallback(triggerPrefetch, { timeout: 5000 });
-      } else {
-        setTimeout(triggerPrefetch, 1500);
+      // Short delay before prefetch - if user interacts, we cancel and prioritize their action
+      // Guard for SSR/test environments where window may not exist
+      if (typeof window !== "undefined") {
+        this.defaultVariantsPrefetchScheduled = true;
+        this.defaultVariantsPrefetchTimeoutId = setTimeout(triggerPrefetch, 2000);
       }
     },
 
@@ -678,6 +684,17 @@ export default {
     },
 
     async showProductDetails(product) {
+      // Cancel any scheduled or in-flight default-variants prefetch to free up Odoo workers
+      if (this.defaultVariantsPrefetchTimeoutId) {
+        clearTimeout(this.defaultVariantsPrefetchTimeoutId);
+        this.defaultVariantsPrefetchTimeoutId = null;
+        this.defaultVariantsPrefetchScheduled = false;
+      }
+      if (this.defaultVariantsAbortController) {
+        this.defaultVariantsAbortController.abort();
+        this.defaultVariantsAbortController = null;
+        this.defaultVariantsRequestInFlight = false;
+      }
       // Cancel any in-flight detail/image fetches before starting a new one
       if (this.detailAbortController) {
         this.detailAbortController.abort();
