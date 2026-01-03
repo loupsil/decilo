@@ -221,6 +221,7 @@ export default {
       defaultVariantsPrefetchScheduled: false,
       defaultVariantsRequestInFlight: false,
       defaultVariantsAbortController: null, // AbortController to cancel in-flight request on locale change
+      productsAbortController: null, // AbortController to cancel in-flight /products request on locale change
     };
   },
   computed: {
@@ -269,7 +270,11 @@ export default {
   },
   methods: {
     async onLocaleChanged() {
-      // Cancel any in-flight default-variants request to free up Odoo workers
+      // Cancel any in-flight requests to free up Odoo workers
+      if (this.productsAbortController) {
+        this.productsAbortController.abort();
+        this.productsAbortController = null;
+      }
       if (this.defaultVariantsAbortController) {
         this.defaultVariantsAbortController.abort();
         this.defaultVariantsAbortController = null;
@@ -339,6 +344,8 @@ export default {
       }
 
       this.isLoading = true;
+      // Create AbortController so request can be cancelled on locale change
+      this.productsAbortController = new AbortController();
       try {
         // Get auth token from localStorage
         const token = localStorage.getItem("decilo_token");
@@ -370,6 +377,7 @@ export default {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
+          signal: this.productsAbortController.signal,
         });
 
         if (!response.ok) {
@@ -450,12 +458,16 @@ export default {
           selectedCategories: this.selectedCategories,
         });
       } catch (error) {
-        this.$emit("show-error", {
-          message: error.message || "Failed to load products",
-          type: "error",
-        });
+        // Don't show error for aborted requests (expected on locale change)
+        if (error.name !== 'AbortError') {
+          this.$emit("show-error", {
+            message: error.message || "Failed to load products",
+            type: "error",
+          });
+        }
       } finally {
         this.isLoading = false;
+        this.productsAbortController = null;
         // Start background prefetch of default variant IDs (non-blocking)
         this.scheduleDefaultVariantPrefetch();
       }
